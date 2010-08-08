@@ -1,0 +1,114 @@
+# left output stream for one gate, input left.
+0L:
+X0R0#X0R:
+0L
+
+02120112100002120
+=====
+# right output stream for one gate, input left.
+0L:
+X0L0#0RX:
+0R
+
+22120221022022120
+=====
+# left output stream for one gate, input right.
+0R:
+0RX0#X0L:
+0L
+
+01210221200001210
+=====
+# right output stream for one gate, input right.
+0R:
+0LX0#0LX:
+0R
+
+22022022022022022
+=====
+# left output stream for two gates, input left.
+0L:
+X1R0#1L1R,
+0L0R0#X0R:
+1L
+
+11010102020011010
+=====
+# right output stream for two gates, input left.
+0L:
+X1L0#1L1R,
+0L0R0#0RX:
+1R
+
+22020111011222020
+=====
+0L:
+X0R0#1L0R,
+0L1R0#X1R:
+1L
+
+00100202221110100
+=====
+0L:
+X0R0#1L0R,
+0L1L0#1RX:
+1R
+
+22102202122220212
+=====
+# external input coming "in between"
+1L:
+1L1R0#X1R,
+X0R0#0L0R:
+0L
+
+02002020202001101
+=====
+# "diamond" with four gates
+0L:
+X3R0#1R2L,
+1L0L0#1L3L,
+0R2R0#3R2R,
+1R2L0#X0R:
+3L
+
+02212222222021111
+=====
+02120112100002120 (left in)
+00100202221110100 (left out)
+22102202122220212 (right out)
+=====
+00100202221110100 (left in)
+01221000201200221 (left out)
+22222120202022122 (right out)
+=====
+02120112100002120 (right in)
+00200101112220200 (left out)
+22022020222220202 (right out)
+=====
+00100202221110100 (right in)
+02112000102100112 (left out)
+22222022102102222 (right out)
+=====
+Logic for Gate #0:
+    +---------------------+
+    | |   0     1     2   |
+    |-+-------------------|
+    |0| (0,2) (2,2) (1,2) |
+    |1| (1,2) (0,0) (2,1) |
+    |2| (2,2) (1,1) (0,0) |
+    +---------------------+
+=====
+Input Prefix: 01202101210201202
+=====
+1L:
+1L1R0#X1R,
+X0R0#0L0R:
+0L
+
+02002020202001101
+=====
+With: 02222220210110011
+  and "circuits/tasksam.txt"
+Key Prefix: 11021210112101221
+=====

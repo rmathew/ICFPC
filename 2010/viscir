@@ -1,0 +1,49 @@
+#!/bin/bash
+
+# Change these as necessary.
+JAVA=/usr/local/jdk/bin/java
+DOT=/usr/local/graphviz/bin/dot
+VIEWER=/opt/kde/bin/kview
+
+CIR2DOT=Cir2Dot
+
+if [ -z "$1" ]
+then
+  echo ERROR: Missing circuit-file-name argument
+  exit 1
+fi
+
+if [ ! -r "$1" ]
+then
+  echo ERROR: Unable to read circuit-file \"$1\"
+  exit 1
+fi
+
+if [ ! -x $JAVA ]
+then
+  echo ERROR: Java interpreter not found in \"$JAVA\"
+  exit 1
+fi
+
+if [ ! -x $DOT ]
+then
+  echo ERROR: Dot interpreter from Graphviz not found in \"$DOT\"
+  exit 1
+fi
+
+if [ ! -x $VIEWER ]
+then
+  echo ERROR: PNG viewer not found in \"$VIEWER\"
+  exit 1
+fi
+
+if [ ! -r "$CIR2DOT".class ]
+then
+  echo ERROR: "$CIR2DOT".class not found - build it first
+  exit 1
+fi
+
+TMPFILE=`mktemp cirpngXXXXXX`
+$JAVA $CIR2DOT "$1" | $DOT -Tpng >$TMPFILE
+$VIEWER $TMPFILE
+rm -f $TMPFILE
