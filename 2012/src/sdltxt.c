@@ -517,7 +517,7 @@ sdltxt_init (const SDL_PixelFormat *fmt) {
                             fmt->Bmask, fmt->Amask);
 
   if (font_sur == NULL || huh_sur == NULL) {
-    fprintf (stderr, "Could not create font surfaces.\n");
+    fprintf(stderr, "ERROR: Could not create font surfaces.\n");
     return 1;
   }
 
@@ -594,7 +594,7 @@ sdltxt_write(const char *txt, Uint16 max, SDL_Surface *dest, Uint16 x,
     }
 
     if (SDL_BlitSurface (src, &src_rect, dest, &dest_rect) != 0) {
-      fprintf (stderr, "Panga: %s\n", SDL_GetError ());
+      fprintf(stderr, "ERROR: Could not render text - %s\n", SDL_GetError());
       error = 1;
     }
 

@@ -1,12 +1,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
+
 #include <SDL.h>
 
 #include "mine.h"
 #include "sdltxt.h"
-
-#define MAX_CMDS 2048U
 
 #define MAX_STATUS_CHARS 31
 #define MAX_SCORE_CHARS 63
@@ -16,8 +16,10 @@
 
 #define ICON_SIZE 16U
 
-static char cmds[MAX_CMDS];
-static uint32_t num_cmds = 0U;
+#define PLAYBACK_DELAY_MS 200U
+
+static bool interactive = true;
+static bool cmds_present = true;
 
 static char score_board[MAX_SCORE_CHARS + 1];
 static char status_board[MAX_STATUS_CHARS + 1];
@@ -189,9 +191,90 @@ draw_map(void) {
 }
 
 static bool
-vis_update(void) {
+get_gui_input(robot_cmd_t* cmd_ptr) {
   bool go_on = true;
 
+  SDL_Event evt;
+  if (interactive) {
+    SDL_WaitEvent(&evt);
+  } else {
+    SDL_PollEvent(&evt);
+  }
+  switch (evt.type) {
+  case SDL_QUIT:
+    go_on = false;
+    break;
+  case SDL_KEYDOWN:
+    switch (evt.key.keysym.sym) {
+    case SDLK_UP:
+      *cmd_ptr = (interactive ? MOVE_UP : UNKNOWN);
+      break;
+    case SDLK_DOWN:
+      *cmd_ptr = (interactive ? MOVE_DOWN : UNKNOWN);
+      break;
+    case SDLK_LEFT:
+      *cmd_ptr = (interactive ? MOVE_LEFT : UNKNOWN);
+      break;
+    case SDLK_RIGHT:
+      *cmd_ptr = (interactive ? MOVE_RIGHT : UNKNOWN);
+      break;
+    case SDLK_a:
+      *cmd_ptr = (interactive ? ABORT : UNKNOWN);
+      break;
+    case SDLK_w:
+      *cmd_ptr = (interactive ? WAIT : UNKNOWN);
+      break;
+    case SDLK_ESCAPE:
+      go_on = false;
+      break;
+    default:
+      *cmd_ptr = UNKNOWN;
+      break;
+    }
+    break;
+  default:
+    *cmd_ptr = UNKNOWN;
+    break;
+  }
+
+  return go_on;
+}
+
+static void
+maybe_get_stdin_input(robot_cmd_t* cmd_ptr) {
+  if (!interactive && cmds_present) {
+    SDL_Delay(PLAYBACK_DELAY_MS);
+
+    int in_char = fgetc(stdin);
+    switch (in_char) {
+    case 'L':
+      *cmd_ptr = MOVE_LEFT;
+      break;
+    case 'R':
+      *cmd_ptr = MOVE_RIGHT;
+      break;
+    case 'U':
+      *cmd_ptr = MOVE_UP;
+      break;
+    case 'D':
+      *cmd_ptr = MOVE_DOWN;
+      break;
+    case 'W':
+      *cmd_ptr = WAIT;
+      break;
+    case 'A':
+      *cmd_ptr = ABORT;
+      break;
+    case EOF:
+      *cmd_ptr = ABORT;
+      cmds_present = false;
+      break;
+    }
+  }
+}
+
+static bool
+vis_update(void) {
   if (SDL_MUSTLOCK(screen)) {
     if (SDL_LockSurface(screen) < 0) {
       return false;
@@ -205,54 +288,9 @@ vis_update(void) {
   }
 
   robot_cmd_t the_cmd = UNKNOWN;
-  char cmd_ltr = '\0';
-  SDL_Event evt;
-  SDL_WaitEvent(&evt);
-  switch (evt.type) {
-  case SDL_QUIT:
-    go_on = false;
-    break;
-  case SDL_KEYDOWN:
-    switch (evt.key.keysym.sym) {
-    case SDLK_UP:
-      the_cmd = MOVE_UP;
-      cmd_ltr = 'U';
-      break;
-    case SDLK_DOWN:
-      the_cmd = MOVE_DOWN;
-      cmd_ltr = 'D';
-      break;
-    case SDLK_LEFT:
-      the_cmd = MOVE_LEFT;
-      cmd_ltr = 'L';
-      break;
-    case SDLK_RIGHT:
-      the_cmd = MOVE_RIGHT;
-      cmd_ltr = 'R';
-      break;
-    case SDLK_a:
-      the_cmd = ABORT;
-      cmd_ltr = 'A';
-      break;
-    case SDLK_ESCAPE:
-      go_on = false;
-      break;
-    case SDLK_w:
-      the_cmd = WAIT;
-      cmd_ltr = 'W';
-      break;
-    default:
-      the_cmd = UNKNOWN;
-      break;
-    }
-    break;
-  default:
-    the_cmd = UNKNOWN;
-    break;
-  }
-
-  if (go_on && (the_cmd != UNKNOWN) && (get_robot_condition() == PLAYING)) {
-    cmds[num_cmds++] = cmd_ltr;
+  bool go_on = get_gui_input(&the_cmd);
+  if (go_on) {
+    maybe_get_stdin_input(&the_cmd);
     refresh_mine(the_cmd);
   }
 
@@ -261,12 +299,31 @@ vis_update(void) {
 
 int
 main(int argc, char* argv[]) {
-  int ret_status;
+  int map_arg_num = 1;
+  if ((argc >= 2) && (strcmp("-p", argv[1]) == 0)) {
+    interactive = false;
+    map_arg_num = 2;
+  }
 
-  ret_status = mine_init(argc, argv);
+  if (argc < (map_arg_num + 1)) {
+    fprintf(stderr, "ERROR: Map file not specified.\n");
+    return 1;
+  }
+
+  const char* map_file = argv[map_arg_num];
+  FILE* fp = fopen(map_file, "r");
+  if (fp == NULL) {
+    perror("ERROR opening map file");
+    return 1;
+  }
+
+  int ret_status = mine_init(map_file, fp);
+  fclose(fp);
 
   if (ret_status == 0) {
     ret_status = vis_init(false);
+  } else {
+    return 1;
   }
 
   if (ret_status == 0) {
@@ -275,11 +332,8 @@ main(int argc, char* argv[]) {
       cont_exec = vis_update();
     } while (cont_exec);
 
-    cmds[num_cmds] = '\0';
-    printf("\nExecuted Commands: %s\n", cmds);
-
+    printf("\nExecuted Commands: %s\n", get_cmds());
     printf("Final State: %s\n", statuses[get_robot_condition()]);
-
     printf("Final Score: %d\n", get_score());
 
   }

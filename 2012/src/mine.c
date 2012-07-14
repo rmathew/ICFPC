@@ -9,7 +9,10 @@
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
-#define MAX_MAP_SIZE 2048U
+#define MAX_MAP_SIZE 2047U
+
+static char cmds[MAX_CMDS];
+static uint32_t num_cmds = 0U;
 
 static char mine_name[1024];
 static char mine_map[MAX_MAP_SIZE][MAX_MAP_SIZE];
@@ -44,112 +47,94 @@ static move_t* pending_moves = NULL;
 static uint32_t num_pending_moves = 0U;
 
 int
-mine_init(int argc, char* argv[]) {
-  int ret_status = 0;
-  if (argc != 2) {
-    fprintf(stderr, "Map file not specified!\n");
-    ret_status = 1;
+mine_init(const char* map_name, FILE* map_fp) {
+  strcpy(mine_name, map_name);
+
+  num_rows = 0U;
+  num_cols = 0U;
+  while (fgets(mine_map[num_rows], MAX_MAP_SIZE, map_fp) != NULL) {
+    size_t row_len = strlen(mine_map[num_rows]);
+    if (mine_map[num_rows][row_len - 1] == '\n') {
+      mine_map[num_rows][row_len - 1] = '\0';
+      row_len--;
+    }
+    
+    // Locate the robot and lift; count lambdas and rocks.
+    for (int i = 0; i < row_len; i++) {
+      switch (mine_map[num_rows][i]) {
+      case 'R':
+        if ((robot_x == INVALID_X) && (robot_y == INVALID_Y)) {
+          robot_x = i;
+          robot_y = num_rows;
+        } else {
+          fprintf(stderr, "ERROR: Invalid map - multiple robots found.\n");
+          return 1;
+        }
+        break;
+      case 'L':
+        if ((lift_x == INVALID_X) && (lift_y == INVALID_Y)) {
+          lift_x = i;
+          lift_y = num_rows;
+        } else {
+          fprintf(stderr, "ERROR: Invalid map - multiple lifts found.\n");
+          return 1;
+        }
+        break;
+      case 'O':
+        fprintf(stderr, "ERROR: Invalid map - an open lift found!\n");
+        return 1;
+        break;
+      case '\\':
+        lambdas_left++;
+        break;
+      case '*':
+        num_rocks++;
+        break;
+      case '#':
+      case '.':
+      case ' ':
+        break;
+      default:
+        fprintf(stderr,
+            "ERROR: Invalid map - unknown character \"%c\" found.\n",
+            mine_map[num_rows][i]);
+        return 1;
+        break;
+      }
+    }
+
+    num_cols = MAX(num_cols, row_len);
+    num_rows++;
   }
 
-  if (ret_status == 0) {
-    strcpy(mine_name, argv[1]);
-    FILE* fp = fopen(mine_name, "r");
-    if (fp != NULL) {
-      num_rows = 0U;
-      num_cols = 0U;
-      while (fgets(mine_map[num_rows], MAX_MAP_SIZE, fp) != NULL) {
-        size_t row_len = strlen(mine_map[num_rows]);
-        if (mine_map[num_rows][row_len - 1] == '\n') {
-          mine_map[num_rows][row_len - 1] = '\0';
-          row_len--;
-        }
-        
-        // FIXME: Validate input characters.
+  if ((robot_x == INVALID_X) || (robot_y == INVALID_Y)) {
+    fprintf(stderr, "ERROR: Invalid map - no robot found.\n");
+    return 1;
+  }
 
-        // Locate the Robot and Lift; count lambdas and rocks.
-        for (int i = 0; i < row_len; i++) {
-          switch (mine_map[num_rows][i]) {
-          case 'R':
-            if ((robot_x == INVALID_X) && (robot_y == INVALID_Y)) {
-              robot_x = i;
-              robot_y = num_rows;
-            } else {
-              fprintf(stderr, "Invalid map file - multiple robots found!\n");
-              ret_status = 1;
-            }
-            break;
-          case 'L':
-            if ((lift_x == INVALID_X) && (lift_y == INVALID_Y)) {
-              lift_x = i;
-              lift_y = num_rows;
-            } else {
-              fprintf(stderr, "Invalid map file - multiple lifts found!\n");
-              ret_status = 1;
-            }
-            break;
-          case 'O':
-            fprintf(stderr, "Invalid map file - open lift found!\n");
-            ret_status = 1;
-            break;
-          case '\\':
-            lambdas_left++;
-            break;
-          case '*':
-            num_rocks++;
-            break;
-          case '#':
-          case '.':
-          case ' ':
-            break;
-          default:
-            fprintf(stderr,
-                "Invalid map file - unknown character \"%c\" found!\n",
-                mine_map[num_rows][i]);
-            ret_status = 1;
-            break;
-          }
-        }
+  if ((lift_x == INVALID_X) || (lift_y == INVALID_Y)) {
+    fprintf(stderr, "ERROR: Invalid map - no lift found.\n");
+    return 1;
+  }
 
-        num_cols = MAX(num_cols, row_len);
-        num_rows++;
+  // Pad empty spaces to rows shorter than the longest row.
+  for (int i = 0; i < num_rows; i++) {
+    char* the_row = mine_map[i];
+    size_t row_len = strlen(the_row);
+    if (row_len < num_cols) {
+      for (int j = row_len; j < num_cols; j++) {
+        the_row[j] = ' ';
       }
-      fclose(fp);
-
-      if ((robot_x == INVALID_X) || (robot_y == INVALID_Y)) {
-        fprintf(stderr, "Invalid map file - no robot found!\n");
-        ret_status = 1;
-      }
-
-      if ((lift_x == INVALID_X) || (lift_y == INVALID_Y)) {
-        fprintf(stderr, "Invalid map file - no lift found!\n");
-        ret_status = 1;
-      }
-
-      if (ret_status == 0) {
-        // Pad empty spaces to rows shorter than the longest row.
-        for (int i = 0; i < num_rows; i++) {
-          char* the_row = mine_map[i];
-          size_t row_len = strlen(the_row);
-          if (row_len < num_cols) {
-            for (int j = row_len; j < num_cols; j++) {
-              the_row[j] = ' ';
-            }
-            the_row[num_cols] = '\0';
-          }
-        }
-
-        pending_moves = malloc(num_rocks * sizeof(move_t));
-        num_pending_moves = 0U;
-        score = 0;
-        robot_condition = PLAYING;
-      }
-    } else {
-      fprintf(stderr, "Could not open map file \"%s\"!\n", mine_name);
-      ret_status = 1;
+      the_row[num_cols] = '\0';
     }
   }
 
-  return ret_status;
+  pending_moves = malloc(num_rocks * sizeof(move_t));
+  num_pending_moves = 0U;
+  score = 0;
+  robot_condition = PLAYING;
+
+  return 0;;
 }
 
 int
@@ -222,31 +207,42 @@ move_robot(robot_cmd_t cmd) {
   int32_t new_x = robot_x;
   int32_t new_y = robot_y;
 
+  char cmd_ltr = '\0';
   switch (cmd) {
   case MOVE_UP:
     new_y = robot_y - 1;
     score--;
+    cmd_ltr = 'U';
     break;
   case MOVE_DOWN:
     new_y = robot_y + 1;
     score--;
+    cmd_ltr = 'D';
     break;
   case MOVE_LEFT:
     new_x = robot_x - 1;
     score--;
+    cmd_ltr = 'L';
     break;
   case MOVE_RIGHT:
     new_x = robot_x + 1;
     score--;
+    cmd_ltr = 'R';
     break;
   case ABORT:
     score += (25 * lambdas_mined);
     robot_condition = ABORTED;
+    cmd_ltr = 'A';
     break;
   case WAIT:
     score--;
+    cmd_ltr = 'W';
   default:
     break;
+  }
+
+  if (num_cmds < MAX_CMDS) {
+    cmds[num_cmds++] = cmd_ltr;
   }
 
   if ((new_x != robot_x) || (new_y != robot_y)) {
@@ -362,7 +358,16 @@ update_map(void) {
 
 void
 refresh_mine(robot_cmd_t cmd) {
+  if (robot_condition != PLAYING) {
+    return;
+  }
+
+  if (cmd == UNKNOWN) {
+    return;
+  }
+
   move_robot(cmd);
+
   update_map();
 
   // Check for losing condition if the game has not yet been won or aborted.
@@ -383,4 +388,10 @@ refresh_mine(robot_cmd_t cmd) {
 robot_cond_t
 get_robot_condition(void) {
   return robot_condition;
+}
+
+const char*
+get_cmds(void) {
+  cmds[num_cmds] = '\0';
+  return cmds;
 }
