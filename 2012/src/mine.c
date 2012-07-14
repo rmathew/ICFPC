@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "mine.h"
 
@@ -10,6 +11,7 @@
 
 #define MAX_MAP_SIZE 2048U
 
+static char mine_name[1024];
 static char mine_map[MAX_MAP_SIZE][MAX_MAP_SIZE];
 
 static uint16_t num_rows;
@@ -17,13 +19,29 @@ static uint16_t num_cols;
 
 static robot_cond_t robot_condition = PLAYING;
 
-static int32_t robot_x;
-static int32_t robot_y;
+#define INVALID_X (UINT16_MAX - 1U)
+#define INVALID_Y (UINT16_MAX - 1U)
+
+static uint16_t robot_x = INVALID_X;
+static uint16_t robot_y = INVALID_Y;
+
+static uint16_t lift_x = INVALID_X;
+static uint16_t lift_y = INVALID_Y;
+
+static uint16_t num_rocks = 0U;
 
 static uint16_t lambdas_left = 0U;
 static uint16_t lambdas_mined = 0U;
 
 static int32_t score;
+
+typedef struct {
+  int32_t old_x, old_y;
+  int32_t new_x, new_y;
+} move_t;
+
+static move_t* pending_moves = NULL;
+static uint32_t num_pending_moves = 0U;
 
 int
 mine_init(int argc, char* argv[]) {
@@ -34,7 +52,8 @@ mine_init(int argc, char* argv[]) {
   }
 
   if (ret_status == 0) {
-    FILE* fp = fopen(argv[1], "r");
+    strcpy(mine_name, argv[1]);
+    FILE* fp = fopen(mine_name, "r");
     if (fp != NULL) {
       num_rows = 0U;
       num_cols = 0U;
@@ -47,14 +66,47 @@ mine_init(int argc, char* argv[]) {
         
         // FIXME: Validate input characters.
 
-        // Locate the Robot.
+        // Locate the Robot and Lift; count lambdas and rocks.
         for (int i = 0; i < row_len; i++) {
-          if (mine_map[num_rows][i] == 'R') {
-            robot_x = i;
-            robot_y = num_rows;
+          switch (mine_map[num_rows][i]) {
+          case 'R':
+            if ((robot_x == INVALID_X) && (robot_y == INVALID_Y)) {
+              robot_x = i;
+              robot_y = num_rows;
+            } else {
+              fprintf(stderr, "Invalid map file - multiple robots found!\n");
+              ret_status = 1;
+            }
             break;
-          } else if (mine_map[num_rows][i] == '\\') {
+          case 'L':
+            if ((lift_x == INVALID_X) && (lift_y == INVALID_Y)) {
+              lift_x = i;
+              lift_y = num_rows;
+            } else {
+              fprintf(stderr, "Invalid map file - multiple lifts found!\n");
+              ret_status = 1;
+            }
+            break;
+          case 'O':
+            fprintf(stderr, "Invalid map file - open lift found!\n");
+            ret_status = 1;
+            break;
+          case '\\':
             lambdas_left++;
+            break;
+          case '*':
+            num_rocks++;
+            break;
+          case '#':
+          case '.':
+          case ' ':
+            break;
+          default:
+            fprintf(stderr,
+                "Invalid map file - unknown character \"%c\" found!\n",
+                mine_map[num_rows][i]);
+            ret_status = 1;
+            break;
           }
         }
 
@@ -63,22 +115,36 @@ mine_init(int argc, char* argv[]) {
       }
       fclose(fp);
 
-      // Pad empty spaces to rows shorter than the longest row.
-      for (int i = 0; i < num_rows; i++) {
-        char* the_row = mine_map[i];
-        size_t row_len = strlen(the_row);
-        if (row_len < num_cols) {
-          for (int j = row_len; j < num_cols; j++) {
-            the_row[j] = ' ';
-          }
-          the_row[num_cols] = '\0';
-        }
+      if ((robot_x == INVALID_X) || (robot_y == INVALID_Y)) {
+        fprintf(stderr, "Invalid map file - no robot found!\n");
+        ret_status = 1;
       }
 
-      score = 0;
-      robot_condition = PLAYING;
+      if ((lift_x == INVALID_X) || (lift_y == INVALID_Y)) {
+        fprintf(stderr, "Invalid map file - no lift found!\n");
+        ret_status = 1;
+      }
+
+      if (ret_status == 0) {
+        // Pad empty spaces to rows shorter than the longest row.
+        for (int i = 0; i < num_rows; i++) {
+          char* the_row = mine_map[i];
+          size_t row_len = strlen(the_row);
+          if (row_len < num_cols) {
+            for (int j = row_len; j < num_cols; j++) {
+              the_row[j] = ' ';
+            }
+            the_row[num_cols] = '\0';
+          }
+        }
+
+        pending_moves = malloc(num_rocks * sizeof(move_t));
+        num_pending_moves = 0U;
+        score = 0;
+        robot_condition = PLAYING;
+      }
     } else {
-      fprintf(stderr, "Could not open map file \"%s\"!\n", argv[1]);
+      fprintf(stderr, "Could not open map file \"%s\"!\n", mine_name);
       ret_status = 1;
     }
   }
@@ -88,7 +154,15 @@ mine_init(int argc, char* argv[]) {
 
 int
 mine_quit(void) {
+  if (pending_moves != NULL) {
+    free(pending_moves);
+  }
   return 0;
+}
+
+const char*
+get_mine_name(void) {
+  return mine_name;
 }
 
 uint16_t
@@ -102,11 +176,11 @@ get_num_cols(void) {
 }
 
 entity_t
-get_entity_at(uint16_t row, uint16_t col) {
+get_entity_at(uint16_t x, uint16_t y) {
   entity_t ret_val = EMPTY_SPACE;
 
   // FIXME: Boundary-checks.
-  char e = mine_map[row][col];
+  char e = mine_map[y][x];
   switch (e) {
   case '\\':
     ret_val = LAMBDA;
@@ -143,8 +217,8 @@ get_score(void) {
   return score;
 }
 
-void
-update_map(robot_cmd_t cmd) {
+static void
+move_robot(robot_cmd_t cmd) {
   int32_t new_x = robot_x;
   int32_t new_y = robot_y;
 
@@ -219,7 +293,21 @@ update_map(robot_cmd_t cmd) {
       cmd = WAIT;
     }
   }
+}
 
+static void
+add_pending_move(int32_t x0, int32_t y0, int32_t x1, int32_t y1) {
+  move_t* updt = (pending_moves + num_pending_moves);
+  updt->old_x = x0;
+  updt->old_y = y0;
+  updt->new_x = x1;
+  updt->new_y = y1;
+  num_pending_moves++;
+}
+
+static void
+update_map(void) {
+  num_pending_moves = 0U;
   for (int32_t i = num_rows - 1; i >= 0; i--) {
     for (int32_t j = 0; j < num_cols; j++) {
       int32_t y_below = i + 1;
@@ -228,21 +316,18 @@ update_map(robot_cmd_t cmd) {
       case '*':
         if (y_below < num_rows) {
           if (mine_map[y_below][j] == ' ') {
-            mine_map[i][j] = ' ';
-            mine_map[y_below][j] = '*';
+            add_pending_move(j, i, j, y_below);
           } else if (mine_map[y_below][j] == '*') {
             int32_t x_right = j + 1;
             int32_t x_left = j - 1;
             if (x_right < num_cols) {
               if ((mine_map[i][x_right] == ' ')
                   && (mine_map[y_below][x_right] == ' ')) {
-                mine_map[i][j] = ' ';
-                mine_map[y_below][x_right] = '*';
+                add_pending_move(j, i, x_right, y_below);
               } else if (x_left >= 0) {
                 if ((mine_map[i][x_left] == ' ')
                     && (mine_map[y_below][x_left] == ' ')) {
-                  mine_map[i][j] = ' ';
-                  mine_map[y_below][x_left] = '*';
+                  add_pending_move(j, i, x_left, y_below);
                 }
               }
             }
@@ -251,8 +336,7 @@ update_map(robot_cmd_t cmd) {
             if (x_right < num_cols) {
               if ((mine_map[i][x_right] == ' ')
                   && (mine_map[y_below][x_right] == ' ')) {
-                mine_map[i][j] = ' ';
-                mine_map[y_below][x_right] = '*';
+                add_pending_move(j, i, x_right, y_below);
               }
             }
           }
@@ -263,6 +347,34 @@ update_map(robot_cmd_t cmd) {
           mine_map[i][j] = 'O';
         }
         break;
+      }
+    }
+  }
+
+  if (num_pending_moves > 0U) {
+    for (int i = 0; i < num_pending_moves; i++) {
+      move_t* updt = (pending_moves + i);
+      mine_map[updt->old_y][updt->old_x] = ' ';
+      mine_map[updt->new_y][updt->new_x] = '*';
+    }
+  }
+}
+
+void
+refresh_mine(robot_cmd_t cmd) {
+  move_robot(cmd);
+  update_map();
+
+  // Check for losing condition if the game has not yet been won or aborted.
+  if ((robot_condition != WON) && (robot_condition != ABORTED)) {
+    if ((num_pending_moves > 0U) && ((robot_y - 1) >= 0)
+        && (mine_map[robot_y - 1][robot_x] == '*')) {
+      for (int i = 0; i < num_pending_moves; i++) {
+        move_t* updt = (pending_moves + i);
+        if ((updt->new_y == (robot_y - 1)) && (updt->new_x == robot_x)) {
+          robot_condition = LOST;
+          break;
+        }
       }
     }
   }

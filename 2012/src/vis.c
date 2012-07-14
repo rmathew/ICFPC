@@ -6,7 +6,25 @@
 #include "mine.h"
 #include "sdltxt.h"
 
+#define MAX_CMDS 2048U
+
+#define MAX_STATUS_CHARS 31
+#define MAX_SCORE_CHARS 63
+
+#define X_MARGIN 5
+#define Y_MARGIN 5
+
 #define ICON_SIZE 16U
+
+static char cmds[MAX_CMDS];
+static uint32_t num_cmds = 0U;
+
+static char score_board[MAX_SCORE_CHARS + 1];
+static char status_board[MAX_STATUS_CHARS + 1];
+
+static char* statuses[] = {
+  "PLAYING", "WON", "LOST", "ABORTED",
+};
 
 static char* icon_bmps[] = {
   "lambda", "miner", "openlift", "lift", "rock", "bricks", "earth",
@@ -16,8 +34,8 @@ static SDL_Surface* icons[] = {
   NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 };
 
-static Uint16 scr_width = 800;
-static Uint16 scr_height = 600;
+static Uint16 scr_width = 640;
+static Uint16 scr_height = 480;
 static Uint8 scr_bypp;
 static SDL_Surface *screen = NULL;
 
@@ -72,7 +90,10 @@ vis_init(bool full_screen) {
   }
 
   scr_bypp = screen->format->BytesPerPixel;
-  SDL_WM_SetCaption("Mine Visualizer", NULL);
+
+  char tmp_buf[1024];
+  sprintf(tmp_buf, "ICFPC 2012 Mine Visualizer (%s)", get_mine_name());
+  SDL_WM_SetCaption(tmp_buf, NULL);
 
   SDL_ShowCursor(full_screen == true ? SDL_DISABLE : SDL_ENABLE);
   SDL_EventState(SDL_MOUSEMOTION, SDL_IGNORE);
@@ -124,7 +145,7 @@ draw_map(void) {
     for (int j = 0; j < num_cols; j++) {
       dest.x = x_off + j * ICON_SIZE;
       dest.y = y_off + i * ICON_SIZE;
-      entity_t cell_type = get_entity_at(i, j);
+      entity_t cell_type = get_entity_at(j, i);
       switch (cell_type) {
         case EMPTY_SPACE:
           SDL_FillRect(screen, &dest, bg_clr);
@@ -135,6 +156,30 @@ draw_map(void) {
       }
     }
   }
+
+  dest.x = X_MARGIN;
+  dest.y = (scr_height - Y_MARGIN - font_height);
+  dest.w = scr_width - (2 * X_MARGIN);
+  dest.h = font_height;
+  SDL_FillRect(screen, &dest, bg_clr);
+
+  int32_t the_score = get_score();
+  sprintf(score_board, "Score: %d", the_score);
+  dest.x = X_MARGIN;
+  dest.y = (scr_height - Y_MARGIN - font_height);
+  sdltxt_write(score_board, MAX_SCORE_CHARS, screen, dest.x, dest.y);
+
+  robot_cond_t cond = get_robot_condition();
+  sprintf(status_board, "Status: %s", statuses[cond]);
+  dest.x = (scr_width - X_MARGIN - (strlen(status_board) * font_width));
+  dest.y = (scr_height - Y_MARGIN - font_height);
+  sdltxt_write(status_board, MAX_STATUS_CHARS, screen, dest.x, dest.y);
+
+  dest.x = X_MARGIN;
+  dest.y = (scr_height - Y_MARGIN - font_height);
+  dest.w = scr_width - (2 * X_MARGIN);
+  dest.h = font_height;
+  SDL_UpdateRects(screen, 1, &dest);
 
   dest.x = x_off;
   dest.y = y_off;
@@ -160,6 +205,7 @@ vis_update(void) {
   }
 
   robot_cmd_t the_cmd = UNKNOWN;
+  char cmd_ltr = '\0';
   SDL_Event evt;
   SDL_WaitEvent(&evt);
   switch (evt.type) {
@@ -170,22 +216,30 @@ vis_update(void) {
     switch (evt.key.keysym.sym) {
     case SDLK_UP:
       the_cmd = MOVE_UP;
+      cmd_ltr = 'U';
       break;
     case SDLK_DOWN:
       the_cmd = MOVE_DOWN;
+      cmd_ltr = 'D';
       break;
     case SDLK_LEFT:
       the_cmd = MOVE_LEFT;
+      cmd_ltr = 'L';
       break;
     case SDLK_RIGHT:
       the_cmd = MOVE_RIGHT;
+      cmd_ltr = 'R';
       break;
-    case SDLK_q:
-    case SDLK_ESCAPE:
+    case SDLK_a:
       the_cmd = ABORT;
+      cmd_ltr = 'A';
       break;
-    case SDLK_SPACE:
+    case SDLK_ESCAPE:
+      go_on = false;
+      break;
+    case SDLK_w:
       the_cmd = WAIT;
+      cmd_ltr = 'W';
       break;
     default:
       the_cmd = UNKNOWN;
@@ -197,12 +251,9 @@ vis_update(void) {
     break;
   }
 
-  if (go_on && (the_cmd != UNKNOWN)) {
-    update_map(the_cmd);
-  }
-
-  if (the_cmd == ABORT) {
-    go_on = false;
+  if (go_on && (the_cmd != UNKNOWN) && (get_robot_condition() == PLAYING)) {
+    cmds[num_cmds++] = cmd_ltr;
+    refresh_mine(the_cmd);
   }
 
   return go_on;
@@ -224,11 +275,18 @@ main(int argc, char* argv[]) {
       cont_exec = vis_update();
     } while (cont_exec);
 
+    cmds[num_cmds] = '\0';
+    printf("\nExecuted Commands: %s\n", cmds);
+
+    printf("Final State: %s\n", statuses[get_robot_condition()]);
+
     printf("Final Score: %d\n", get_score());
+
   }
 
   if (ret_status == 0) {
     ret_status = vis_quit();
+    mine_quit();
   }
 
   return ret_status;
