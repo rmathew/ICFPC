@@ -14,7 +14,6 @@
 static char cmds[MAX_CMDS];
 static uint32_t num_cmds = 0U;
 
-static char mine_name[1024];
 static char mine_map[MAX_MAP_SIZE][MAX_MAP_SIZE];
 
 static uint16_t num_rows;
@@ -47,9 +46,7 @@ static move_t* pending_moves = NULL;
 static uint32_t num_pending_moves = 0U;
 
 int
-mine_init(const char* map_name, FILE* map_fp) {
-  strcpy(mine_name, map_name);
-
+mine_init(FILE* map_fp) {
   num_rows = 0U;
   num_cols = 0U;
   while (fgets(mine_map[num_rows], MAX_MAP_SIZE, map_fp) != NULL) {
@@ -143,11 +140,6 @@ mine_quit(void) {
     free(pending_moves);
   }
   return 0;
-}
-
-const char*
-get_mine_name(void) {
-  return mine_name;
 }
 
 uint16_t

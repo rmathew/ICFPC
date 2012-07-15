@@ -20,6 +20,7 @@
 
 #define PLAYBACK_DELAY_MS 200U
 
+static char* map_file = NULL;
 static bool interactive = true;
 static bool cmds_present = true;
 
@@ -124,7 +125,7 @@ vis_init(bool full_screen) {
 
   scr_bypp = screen->format->BytesPerPixel;
 
-  sprintf(tmp_buf, "ICFPC 2012 Mine Visualizer (%s)", get_mine_name());
+  sprintf(tmp_buf, "ICFPC 2012 Mine Visualizer (%s)", map_file);
   SDL_WM_SetCaption(tmp_buf, NULL);
 
   SDL_ShowCursor(full_screen == true ? SDL_DISABLE : SDL_ENABLE);
@@ -333,14 +334,14 @@ main(int argc, char* argv[]) {
     return 1;
   }
 
-  const char* map_file = argv[map_arg_num];
+  map_file = argv[map_arg_num];
   FILE* fp = fopen(map_file, "r");
   if (fp == NULL) {
     perror("ERROR opening map file");
     return 1;
   }
 
-  int ret_status = mine_init(map_file, fp);
+  int ret_status = mine_init(fp);
   fclose(fp);
 
   if (ret_status == 0) {

@@ -6,7 +6,7 @@
 
 int
 main(int argc, char* argv[]) {
-  int ret_status = mine_init("<STDIN>", stdin);
+  int ret_status = mine_init(stdin);
   if (ret_status != 0) {
     return 1;
   }

@@ -28,8 +28,7 @@ typedef enum {
   ABORTED,
 } status_t;
 
-extern int mine_init(const char* map_name, FILE* map_fp);
-extern const char* get_mine_name(void);
+extern int mine_init(FILE* map_fp);
 extern uint16_t get_num_rows(void);
 extern uint16_t get_num_cols(void);
 extern char get_entity_at(uint16_t x, uint16_t y);

@@ -13,7 +13,7 @@ then
 fi
 
 function chk_prog() {
-  make $1
+  make -s $1
   if [ "$?" != "0" ]
   then
     echo ERROR: Could not create program \"$1\".
