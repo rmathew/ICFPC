@@ -8,8 +8,10 @@
 #include "mine.h"
 #include "sdltxt.h"
 
-#define MAX_STATUS_CHARS 31
-#define MAX_SCORE_CHARS 63
+#define MAX_BUF_CHARS 1023
+
+#define X_PADDING 25
+#define Y_PADDING 10
 
 #define X_MARGIN 5
 #define Y_MARGIN 5
@@ -21,15 +23,10 @@
 static bool interactive = true;
 static bool cmds_present = true;
 
-static char score_board[MAX_SCORE_CHARS + 1];
-static char status_board[MAX_STATUS_CHARS + 1];
+static char tmp_buf[MAX_BUF_CHARS + 1];
 
 static char* statuses[] = {
   "PLAYING", "WON", "LOST", "ABORTED",
-};
-
-static char* icon_bmps[] = {
-  "lambda", "miner", "openlift", "lift", "rock", "bricks", "earth",
 };
 
 static SDL_Surface* icons[] = {
@@ -49,7 +46,10 @@ static Uint32 bg_clr;
 static int
 load_icons(void) {
   int ret_status = 0;
-  char tmp_buf[256];
+  char* icon_bmps[] = {
+    "lambda", "miner", "openlift", "lift", "rock", "bricks", "earth",
+  };
+
   for (int i = 0; i < sizeof (icon_bmps) / sizeof (char *); i++) {
     sprintf(tmp_buf, "./icons/%s.bmp", icon_bmps[i]);
     icons[i] = SDL_LoadBMP(tmp_buf);
@@ -61,6 +61,37 @@ load_icons(void) {
     }
   }
   return ret_status;
+}
+
+static SDL_Surface*
+get_icon_for_entity(char entity) {
+  SDL_Surface* ret_val = NULL;
+  switch (entity) {
+  case ENTITY_LAMBDA:
+    ret_val = icons[0];
+    break;
+  case ENTITY_ROBOT:
+    ret_val = icons[1];
+    break;
+  case ENTITY_OPEN_LIFT:
+    ret_val = icons[2];
+    break;
+  case ENTITY_CLOSED_LIFT:
+    ret_val = icons[3];
+    break;
+  case ENTITY_ROCK:
+    ret_val = icons[4];
+    break;
+  case ENTITY_WALL:
+    ret_val = icons[5];
+    break;
+  case ENTITY_EARTH:
+    ret_val = icons[6];
+    break;
+  default:
+    break;
+  }
+  return ret_val;
 }
 
 static int
@@ -93,7 +124,6 @@ vis_init(bool full_screen) {
 
   scr_bypp = screen->format->BytesPerPixel;
 
-  char tmp_buf[1024];
   sprintf(tmp_buf, "ICFPC 2012 Mine Visualizer (%s)", get_mine_name());
   SDL_WM_SetCaption(tmp_buf, NULL);
 
@@ -147,17 +177,23 @@ draw_map(void) {
     for (int j = 0; j < num_cols; j++) {
       dest.x = x_off + j * ICON_SIZE;
       dest.y = y_off + i * ICON_SIZE;
-      entity_t cell_type = get_entity_at(j, i);
-      switch (cell_type) {
-        case EMPTY_SPACE:
+      char entity = get_entity_at(j, i);
+      switch (entity) {
+        case ENTITY_EMPTY:
           SDL_FillRect(screen, &dest, bg_clr);
           break;
         default:
-          SDL_BlitSurface(icons[cell_type], NULL, screen, &dest);
+          SDL_BlitSurface(get_icon_for_entity(entity), NULL, screen, &dest);
           break;
       }
     }
   }
+
+  dest.x = x_off;
+  dest.y = y_off;
+  dest.w = ICON_SIZE * num_cols;
+  dest.h = ICON_SIZE * num_rows;
+  SDL_UpdateRects(screen, 1, &dest);
 
   dest.x = X_MARGIN;
   dest.y = (scr_height - Y_MARGIN - font_height);
@@ -165,33 +201,21 @@ draw_map(void) {
   dest.h = font_height;
   SDL_FillRect(screen, &dest, bg_clr);
 
-  int32_t the_score = get_score();
-  sprintf(score_board, "Score: %d", the_score);
-  dest.x = X_MARGIN;
-  dest.y = (scr_height - Y_MARGIN - font_height);
-  sdltxt_write(score_board, MAX_SCORE_CHARS, screen, dest.x, dest.y);
+  uint16_t robot_x, robot_y;
+  get_robot_pos(&robot_x, &robot_y);
+  sprintf(tmp_buf,
+      "Score: %7d  Robot@: (%02x,%02x)  Lambdas Left: %5d  Status: %s",
+      get_score(), robot_x, robot_y, get_num_lambdas_left(),
+      statuses[get_status()]);
+  sdltxt_write(tmp_buf, MAX_BUF_CHARS, screen, dest.x, dest.y);
 
-  robot_cond_t cond = get_robot_condition();
-  sprintf(status_board, "Status: %s", statuses[cond]);
-  dest.x = (scr_width - X_MARGIN - (strlen(status_board) * font_width));
-  dest.y = (scr_height - Y_MARGIN - font_height);
-  sdltxt_write(status_board, MAX_STATUS_CHARS, screen, dest.x, dest.y);
-
-  dest.x = X_MARGIN;
-  dest.y = (scr_height - Y_MARGIN - font_height);
   dest.w = scr_width - (2 * X_MARGIN);
   dest.h = font_height;
-  SDL_UpdateRects(screen, 1, &dest);
-
-  dest.x = x_off;
-  dest.y = y_off;
-  dest.w = ICON_SIZE * num_cols;
-  dest.h = ICON_SIZE * num_rows;
   SDL_UpdateRects(screen, 1, &dest);
 }
 
 static bool
-get_gui_input(robot_cmd_t* cmd_ptr) {
+get_gui_input(char* cmd_ptr) {
   bool go_on = true;
 
   SDL_Event evt;
@@ -207,33 +231,33 @@ get_gui_input(robot_cmd_t* cmd_ptr) {
   case SDL_KEYDOWN:
     switch (evt.key.keysym.sym) {
     case SDLK_UP:
-      *cmd_ptr = (interactive ? MOVE_UP : UNKNOWN);
+      *cmd_ptr = (interactive ? CMD_UP : CMD_UNKNOWN);
       break;
     case SDLK_DOWN:
-      *cmd_ptr = (interactive ? MOVE_DOWN : UNKNOWN);
+      *cmd_ptr = (interactive ? CMD_DOWN : CMD_UNKNOWN);
       break;
     case SDLK_LEFT:
-      *cmd_ptr = (interactive ? MOVE_LEFT : UNKNOWN);
+      *cmd_ptr = (interactive ? CMD_LEFT : CMD_UNKNOWN);
       break;
     case SDLK_RIGHT:
-      *cmd_ptr = (interactive ? MOVE_RIGHT : UNKNOWN);
+      *cmd_ptr = (interactive ? CMD_RIGHT : CMD_UNKNOWN);
       break;
     case SDLK_a:
-      *cmd_ptr = (interactive ? ABORT : UNKNOWN);
+      *cmd_ptr = (interactive ? CMD_ABORT : CMD_UNKNOWN);
       break;
     case SDLK_w:
-      *cmd_ptr = (interactive ? WAIT : UNKNOWN);
+      *cmd_ptr = (interactive ? CMD_WAIT : CMD_UNKNOWN);
       break;
     case SDLK_ESCAPE:
       go_on = false;
       break;
     default:
-      *cmd_ptr = UNKNOWN;
+      *cmd_ptr = CMD_UNKNOWN;
       break;
     }
     break;
   default:
-    *cmd_ptr = UNKNOWN;
+    *cmd_ptr = CMD_UNKNOWN;
     break;
   }
 
@@ -241,32 +265,31 @@ get_gui_input(robot_cmd_t* cmd_ptr) {
 }
 
 static void
-maybe_get_stdin_input(robot_cmd_t* cmd_ptr) {
-  if (!interactive && cmds_present) {
+maybe_get_stdin_input(char* cmd_ptr) {
+  if (!interactive && cmds_present && (get_status() == PLAYING)) {
     SDL_Delay(PLAYBACK_DELAY_MS);
 
     int in_char = fgetc(stdin);
     switch (in_char) {
-    case 'L':
-      *cmd_ptr = MOVE_LEFT;
+    case CMD_LEFT:
+    case CMD_RIGHT:
+    case CMD_UP:
+    case CMD_DOWN:
+    case CMD_WAIT:
+    case CMD_ABORT:
+      *cmd_ptr = in_char;
       break;
-    case 'R':
-      *cmd_ptr = MOVE_RIGHT;
-      break;
-    case 'U':
-      *cmd_ptr = MOVE_UP;
-      break;
-    case 'D':
-      *cmd_ptr = MOVE_DOWN;
-      break;
-    case 'W':
-      *cmd_ptr = WAIT;
-      break;
-    case 'A':
-      *cmd_ptr = ABORT;
+    case '\0':
+    case '\n':
+    case '\r':
       break;
     case EOF:
-      *cmd_ptr = ABORT;
+      *cmd_ptr = CMD_ABORT;
+      cmds_present = false;
+      break;
+    default:
+      fprintf(stderr, "ERROR: Unknown command in input \"%c\".\n", in_char);
+      *cmd_ptr = CMD_UNKNOWN;
       cmds_present = false;
       break;
     }
@@ -287,7 +310,7 @@ vis_update(void) {
     SDL_UnlockSurface(screen);
   }
 
-  robot_cmd_t the_cmd = UNKNOWN;
+  char the_cmd = CMD_UNKNOWN;
   bool go_on = get_gui_input(&the_cmd);
   if (go_on) {
     maybe_get_stdin_input(&the_cmd);
@@ -333,7 +356,7 @@ main(int argc, char* argv[]) {
     } while (cont_exec);
 
     printf("\nExecuted Commands: %s\n", get_cmds());
-    printf("Final State: %s\n", statuses[get_robot_condition()]);
+    printf("Final Status: %s\n", statuses[get_status()]);
     printf("Final Score: %d\n", get_score());
 
   }

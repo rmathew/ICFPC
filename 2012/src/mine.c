@@ -20,7 +20,7 @@ static char mine_map[MAX_MAP_SIZE][MAX_MAP_SIZE];
 static uint16_t num_rows;
 static uint16_t num_cols;
 
-static robot_cond_t robot_condition = PLAYING;
+static status_t status = PLAYING;
 
 #define INVALID_X (UINT16_MAX - 1U)
 #define INVALID_Y (UINT16_MAX - 1U)
@@ -62,7 +62,7 @@ mine_init(const char* map_name, FILE* map_fp) {
     // Locate the robot and lift; count lambdas and rocks.
     for (int i = 0; i < row_len; i++) {
       switch (mine_map[num_rows][i]) {
-      case 'R':
+      case ENTITY_ROBOT:
         if ((robot_x == INVALID_X) && (robot_y == INVALID_Y)) {
           robot_x = i;
           robot_y = num_rows;
@@ -71,7 +71,7 @@ mine_init(const char* map_name, FILE* map_fp) {
           return 1;
         }
         break;
-      case 'L':
+      case ENTITY_CLOSED_LIFT:
         if ((lift_x == INVALID_X) && (lift_y == INVALID_Y)) {
           lift_x = i;
           lift_y = num_rows;
@@ -80,19 +80,19 @@ mine_init(const char* map_name, FILE* map_fp) {
           return 1;
         }
         break;
-      case 'O':
+      case ENTITY_OPEN_LIFT:
         fprintf(stderr, "ERROR: Invalid map - an open lift found!\n");
         return 1;
         break;
-      case '\\':
+      case ENTITY_LAMBDA:
         lambdas_left++;
         break;
-      case '*':
+      case ENTITY_ROCK:
         num_rocks++;
         break;
-      case '#':
-      case '.':
-      case ' ':
+      case ENTITY_WALL:
+      case ENTITY_EARTH:
+      case ENTITY_EMPTY:
         break;
       default:
         fprintf(stderr,
@@ -123,7 +123,7 @@ mine_init(const char* map_name, FILE* map_fp) {
     size_t row_len = strlen(the_row);
     if (row_len < num_cols) {
       for (int j = row_len; j < num_cols; j++) {
-        the_row[j] = ' ';
+        the_row[j] = ENTITY_EMPTY;
       }
       the_row[num_cols] = '\0';
     }
@@ -132,7 +132,7 @@ mine_init(const char* map_name, FILE* map_fp) {
   pending_moves = malloc(num_rocks * sizeof(move_t));
   num_pending_moves = 0U;
   score = 0;
-  robot_condition = PLAYING;
+  status = PLAYING;
 
   return 0;;
 }
@@ -160,41 +160,13 @@ get_num_cols(void) {
   return num_cols;
 }
 
-entity_t
+char
 get_entity_at(uint16_t x, uint16_t y) {
-  entity_t ret_val = EMPTY_SPACE;
-
-  // FIXME: Boundary-checks.
-  char e = mine_map[y][x];
-  switch (e) {
-  case '\\':
-    ret_val = LAMBDA;
-    break;
-  case 'R':
-    ret_val = MINER;
-    break;
-  case 'O':
-    ret_val = OPEN_LIFT;
-    break;
-  case 'L':
-    ret_val = CLOSED_LIFT;
-    break;
-  case '*':
-    ret_val = ROCK;
-    break;
-  case '#':
-    ret_val = BRICKS;
-    break;
-  case '.':
-    ret_val = EARTH;
-    break;
-  case ' ':
-    ret_val = EMPTY_SPACE;
-    break;
-  default:
-    break;
+  if ((x < num_cols) && (y < num_rows)) {
+    return mine_map[y][x];
+  } else {
+    return ENTITY_UNKNOWN;
   }
-  return ret_val;
 }
 
 int
@@ -203,46 +175,41 @@ get_score(void) {
 }
 
 static void
-move_robot(robot_cmd_t cmd) {
+move_robot(char cmd) {
   int32_t new_x = robot_x;
   int32_t new_y = robot_y;
 
-  char cmd_ltr = '\0';
   switch (cmd) {
-  case MOVE_UP:
+  case CMD_UP:
     new_y = robot_y - 1;
     score--;
-    cmd_ltr = 'U';
     break;
-  case MOVE_DOWN:
+  case CMD_DOWN:
     new_y = robot_y + 1;
     score--;
-    cmd_ltr = 'D';
     break;
-  case MOVE_LEFT:
+  case CMD_LEFT:
     new_x = robot_x - 1;
     score--;
-    cmd_ltr = 'L';
     break;
-  case MOVE_RIGHT:
+  case CMD_RIGHT:
     new_x = robot_x + 1;
     score--;
-    cmd_ltr = 'R';
     break;
-  case ABORT:
+  case CMD_ABORT:
     score += (25 * lambdas_mined);
-    robot_condition = ABORTED;
-    cmd_ltr = 'A';
+    status = ABORTED;
     break;
-  case WAIT:
+  case CMD_WAIT:
     score--;
-    cmd_ltr = 'W';
   default:
+    fprintf(stderr, "ERROR: Unknown command \"%c\".\n", cmd);
+    cmd = CMD_ABORT;
     break;
   }
 
   if (num_cmds < MAX_CMDS) {
-    cmds[num_cmds++] = cmd_ltr;
+    cmds[num_cmds++] = cmd;
   }
 
   if ((new_x != robot_x) || (new_y != robot_y)) {
@@ -251,21 +218,21 @@ move_robot(robot_cmd_t cmd) {
         && (new_y < num_rows)) {
       char at_tgt = mine_map[new_y][new_x];
       switch (at_tgt) {
-      case ' ':
-      case '.':
-      case '\\':
-      case 'O':
+      case ENTITY_EMPTY:
+      case ENTITY_EARTH:
+      case ENTITY_LAMBDA:
+      case ENTITY_OPEN_LIFT:
         move_allowed = true;
         break;
-      case '*':
-        if ((cmd == MOVE_LEFT) && ((new_x - 1) >= 0)
-            && (mine_map[new_y][new_x - 1] == ' ')) {
-          mine_map[new_y][new_x - 1] = '*';
+      case ENTITY_ROCK:
+        if ((cmd == CMD_LEFT) && ((new_x - 1) >= 0)
+            && (mine_map[new_y][new_x - 1] == ENTITY_EMPTY)) {
+          mine_map[new_y][new_x - 1] = ENTITY_ROCK;
           move_allowed = true;
         }
-        if ((cmd == MOVE_RIGHT) && ((new_x + 1) < num_cols)
-            && (mine_map[new_y][new_x + 1] == ' ')) {
-          mine_map[new_y][new_x + 1] = '*';
+        if ((cmd == CMD_RIGHT) && ((new_x + 1) < num_cols)
+            && (mine_map[new_y][new_x + 1] == ENTITY_EMPTY)) {
+          mine_map[new_y][new_x + 1] = ENTITY_ROCK;
           move_allowed = true;
         }
         break;
@@ -273,20 +240,20 @@ move_robot(robot_cmd_t cmd) {
     }
 
     if (move_allowed) {
-      if (mine_map[new_y][new_x] == '\\') {
+      if (mine_map[new_y][new_x] == ENTITY_LAMBDA) {
         lambdas_left--;
         lambdas_mined++;
         score += 25;
-      } else if (mine_map[new_y][new_x] == 'O') {
+      } else if (mine_map[new_y][new_x] == ENTITY_OPEN_LIFT) {
         score += (50 * lambdas_mined);
-        robot_condition = WON;
+        status = WON;
       }
-      mine_map[robot_y][robot_x] = ' ';
+      mine_map[robot_y][robot_x] = ENTITY_EMPTY;
       robot_x = new_x;
       robot_y = new_y;
-      mine_map[robot_y][robot_x] = 'R';
+      mine_map[robot_y][robot_x] = ENTITY_ROBOT;
     } else {
-      cmd = WAIT;
+      cmd = CMD_WAIT;
     }
   }
 }
@@ -309,38 +276,38 @@ update_map(void) {
       int32_t y_below = i + 1;
       char ent = mine_map[i][j];
       switch (ent) {
-      case '*':
+      case ENTITY_ROCK:
         if (y_below < num_rows) {
-          if (mine_map[y_below][j] == ' ') {
+          if (mine_map[y_below][j] == ENTITY_EMPTY) {
             add_pending_move(j, i, j, y_below);
-          } else if (mine_map[y_below][j] == '*') {
+          } else if (mine_map[y_below][j] == ENTITY_ROCK) {
             int32_t x_right = j + 1;
             int32_t x_left = j - 1;
             if (x_right < num_cols) {
-              if ((mine_map[i][x_right] == ' ')
-                  && (mine_map[y_below][x_right] == ' ')) {
+              if ((mine_map[i][x_right] == ENTITY_EMPTY)
+                  && (mine_map[y_below][x_right] == ENTITY_EMPTY)) {
                 add_pending_move(j, i, x_right, y_below);
               } else if (x_left >= 0) {
-                if ((mine_map[i][x_left] == ' ')
-                    && (mine_map[y_below][x_left] == ' ')) {
+                if ((mine_map[i][x_left] == ENTITY_EMPTY)
+                    && (mine_map[y_below][x_left] == ENTITY_EMPTY)) {
                   add_pending_move(j, i, x_left, y_below);
                 }
               }
             }
-          } else if (mine_map[y_below][j] == '\\') {
+          } else if (mine_map[y_below][j] == ENTITY_LAMBDA) {
             int32_t x_right = j + 1;
             if (x_right < num_cols) {
-              if ((mine_map[i][x_right] == ' ')
-                  && (mine_map[y_below][x_right] == ' ')) {
+              if ((mine_map[i][x_right] == ENTITY_EMPTY)
+                  && (mine_map[y_below][x_right] == ENTITY_EMPTY)) {
                 add_pending_move(j, i, x_right, y_below);
               }
             }
           }
         }
         break;
-      case 'L':
+      case ENTITY_CLOSED_LIFT:
         if (lambdas_left == 0) {
-          mine_map[i][j] = 'O';
+          mine_map[i][j] = ENTITY_OPEN_LIFT;
         }
         break;
       }
@@ -350,19 +317,19 @@ update_map(void) {
   if (num_pending_moves > 0U) {
     for (int i = 0; i < num_pending_moves; i++) {
       move_t* updt = (pending_moves + i);
-      mine_map[updt->old_y][updt->old_x] = ' ';
-      mine_map[updt->new_y][updt->new_x] = '*';
+      mine_map[updt->old_y][updt->old_x] = ENTITY_EMPTY;
+      mine_map[updt->new_y][updt->new_x] = ENTITY_ROCK;
     }
   }
 }
 
 void
-refresh_mine(robot_cmd_t cmd) {
-  if (robot_condition != PLAYING) {
+refresh_mine(char cmd) {
+  if (status != PLAYING) {
     return;
   }
 
-  if (cmd == UNKNOWN) {
+  if (cmd == CMD_UNKNOWN) {
     return;
   }
 
@@ -371,13 +338,13 @@ refresh_mine(robot_cmd_t cmd) {
   update_map();
 
   // Check for losing condition if the game has not yet been won or aborted.
-  if ((robot_condition != WON) && (robot_condition != ABORTED)) {
+  if ((status != WON) && (status != ABORTED)) {
     if ((num_pending_moves > 0U) && ((robot_y - 1) >= 0)
-        && (mine_map[robot_y - 1][robot_x] == '*')) {
+        && (mine_map[robot_y - 1][robot_x] == ENTITY_ROCK)) {
       for (int i = 0; i < num_pending_moves; i++) {
         move_t* updt = (pending_moves + i);
         if ((updt->new_y == (robot_y - 1)) && (updt->new_x == robot_x)) {
-          robot_condition = LOST;
+          status = LOST;
           break;
         }
       }
@@ -385,13 +352,30 @@ refresh_mine(robot_cmd_t cmd) {
   }
 }
 
-robot_cond_t
-get_robot_condition(void) {
-  return robot_condition;
+status_t
+get_status(void) {
+  return status;
 }
 
 const char*
 get_cmds(void) {
   cmds[num_cmds] = '\0';
   return cmds;
+}
+
+void
+get_lift_pos(uint16_t* x, uint16_t* y) {
+  *x = lift_x;
+  *y = lift_y;
+}
+
+void
+get_robot_pos(uint16_t* x, uint16_t* y) {
+  *x = robot_x;
+  *y = robot_y;
+}
+
+uint16_t
+get_num_lambdas_left(void) {
+  return lambdas_left;
 }
