@@ -37,6 +37,8 @@ static uint16_t lambdas_mined = 0U;
 
 static int32_t score;
 
+static bool pinned_rocks = false;
+
 typedef struct {
   int32_t old_x, old_y;
   int32_t new_x, new_y;
@@ -126,8 +128,13 @@ mine_init(FILE* map_fp) {
     }
   }
 
-  pending_moves = malloc(num_rocks * sizeof(move_t));
+  if (getenv("PINNED_ROCKS") != NULL) {
+    pinned_rocks = true;
+  } else {
+    pending_moves = malloc(num_rocks * sizeof(move_t));
+  }
   num_pending_moves = 0U;
+
   score = 0;
   status = PLAYING;
 
@@ -194,6 +201,7 @@ move_robot(char cmd) {
     break;
   case CMD_WAIT:
     score--;
+    break;
   default:
     fprintf(stderr, "ERROR: Unknown command \"%c\".\n", cmd);
     cmd = CMD_ABORT;
@@ -217,15 +225,17 @@ move_robot(char cmd) {
         move_allowed = true;
         break;
       case ENTITY_ROCK:
-        if ((cmd == CMD_LEFT) && ((new_x - 1) >= 0)
-            && (mine_map[new_y][new_x - 1] == ENTITY_EMPTY)) {
-          mine_map[new_y][new_x - 1] = ENTITY_ROCK;
-          move_allowed = true;
-        }
-        if ((cmd == CMD_RIGHT) && ((new_x + 1) < num_cols)
-            && (mine_map[new_y][new_x + 1] == ENTITY_EMPTY)) {
-          mine_map[new_y][new_x + 1] = ENTITY_ROCK;
-          move_allowed = true;
+        if (!pinned_rocks) {
+          if ((cmd == CMD_LEFT) && ((new_x - 1) >= 0)
+              && (mine_map[new_y][new_x - 1] == ENTITY_EMPTY)) {
+            mine_map[new_y][new_x - 1] = ENTITY_ROCK;
+            move_allowed = true;
+          }
+          if ((cmd == CMD_RIGHT) && ((new_x + 1) < num_cols)
+              && (mine_map[new_y][new_x + 1] == ENTITY_EMPTY)) {
+            mine_map[new_y][new_x + 1] = ENTITY_ROCK;
+            move_allowed = true;
+          }
         }
         break;
       }
@@ -252,12 +262,14 @@ move_robot(char cmd) {
 
 static void
 add_pending_move(int32_t x0, int32_t y0, int32_t x1, int32_t y1) {
-  move_t* updt = (pending_moves + num_pending_moves);
-  updt->old_x = x0;
-  updt->old_y = y0;
-  updt->new_x = x1;
-  updt->new_y = y1;
-  num_pending_moves++;
+  if (!pinned_rocks) {
+    move_t* updt = (pending_moves + num_pending_moves);
+    updt->old_x = x0;
+    updt->old_y = y0;
+    updt->new_x = x1;
+    updt->new_y = y1;
+    num_pending_moves++;
+  }
 }
 
 static void
