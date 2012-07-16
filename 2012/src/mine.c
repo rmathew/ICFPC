@@ -406,7 +406,9 @@ are_rocks_pinned(void) {
 }
 
 pos_t*
-get_orig_lambdas(uint16_t* num_orig_lambdas) {
-  *num_orig_lambdas = lambdas_orig;
+get_orig_lambdas(uint16_t* num_p) {
+  if (num_p != NULL) {
+    *num_p = lambdas_orig;
+  }
   return lambda_locs;
 }

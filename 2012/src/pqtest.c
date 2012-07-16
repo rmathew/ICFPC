@@ -28,6 +28,11 @@ chk_ints(void) {
     return 1;
   }
 
+  if (!pq_has_elt(test_q, (void*)2357, NULL)) {
+    fprintf(stderr, "ERROR: Queue doesn't have expected element \"2357\".\n");
+    return 1;
+  }
+
   int i = 0;
   while (!pq_is_empty(test_q)) {
     uint32_t next = (uint32_t)pq_delmin(test_q);
@@ -71,6 +76,12 @@ chk_strings(void) {
   if (pq_size(test_q) != inp_length) {
     fprintf(stderr, "ERROR: Queue-size is \"%d\" instead of \"%d\".\n",
         pq_size(test_q), inp_length);
+    return 1;
+  }
+
+  if (!pq_has_elt(test_q, "pakeezah", NULL)) {
+    fprintf(stderr,
+        "ERROR: Queue doesn't have expected element \"pakeezah\".\n");
     return 1;
   }
 

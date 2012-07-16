@@ -99,6 +99,26 @@ pq_delmin(pqueue_t* the_queue) {
   return ret_val;
 }
 
+bool
+pq_has_elt(pqueue_t* the_queue, void* the_elt, bool
+    (*eq_fn_p)(const void*, const void*)) {
+  bool ret_val = false;
+  if ((the_queue != NULL) && (the_queue->last >= 0)) {
+    // FIXME: Ugly linear search; exploit the partially-ordered property.
+    int (*compare)(const void*, const void*) = the_queue->compare_p;
+    for (int i = 0; i <= the_queue->last; i++) {
+      bool equal = (eq_fn_p != NULL) ? ((*eq_fn_p)(ELT_AT(i), the_elt))
+          : ((*compare)(ELT_AT(i), the_elt) == 0);
+
+      if (equal) {
+        ret_val = true;
+        break;
+      }
+    }
+  }
+  return ret_val;
+}
+
 void
 pq_destroy(pqueue_t* the_queue) {
   if (the_queue != NULL) {

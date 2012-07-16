@@ -37,7 +37,7 @@ extern bool are_rocks_pinned(void);
 extern uint16_t get_num_rows(void);
 extern uint16_t get_num_cols(void);
 extern char get_entity_at(const pos_t* pos);
-extern pos_t* get_orig_lambdas(uint16_t* num_orig_lambdas);
+extern pos_t* get_orig_lambdas(uint16_t* num_p);
 extern int32_t get_score(void);
 extern uint16_t get_num_lambdas_left(void);
 extern void get_lift_pos(pos_t* pos);
