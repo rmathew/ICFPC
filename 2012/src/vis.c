@@ -174,11 +174,14 @@ draw_map(void) {
   SDL_Rect dest;
   dest.w = ICON_SIZE;
   dest.h = ICON_SIZE;
+  pos_t pos;
   for (int i = 0; i < num_rows; i++) {
     for (int j = 0; j < num_cols; j++) {
       dest.x = x_off + j * ICON_SIZE;
       dest.y = y_off + i * ICON_SIZE;
-      char entity = get_entity_at(j, i);
+      pos.x = j;
+      pos.y = i;
+      char entity = get_entity_at(&pos);
       switch (entity) {
         case ENTITY_EMPTY:
           SDL_FillRect(screen, &dest, bg_clr);
@@ -202,11 +205,11 @@ draw_map(void) {
   dest.h = font_height;
   SDL_FillRect(screen, &dest, bg_clr);
 
-  uint16_t robot_x, robot_y;
-  get_robot_pos(&robot_x, &robot_y);
+  pos_t robot_pos;
+  get_robot_pos(&robot_pos);
   sprintf(tmp_buf,
       "Score: %7d  Robot@: (%02x,%02x)  Lambdas Left: %5d  Status: %s",
-      get_score(), robot_x, robot_y, get_num_lambdas_left(),
+      get_score(), robot_pos.x, robot_pos.y, get_num_lambdas_left(),
       statuses[get_status()]);
   sdltxt_write(tmp_buf, MAX_BUF_CHARS, screen, dest.x, dest.y);
 

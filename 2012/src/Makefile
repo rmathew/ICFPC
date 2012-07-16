@@ -12,12 +12,15 @@ VIS_LFLAGS=$(SDL_LIB) -lX11
 
 CHECKER_LFLAGS=
 
+PQTEST_LFLAGS=
+
 COMMON_OBJECTS=\
    mine.o \
 
 LIFTER_PROG=lifter
 LIFTER_OBJECTS=\
   $(COMMON_OBJECTS) \
+  pqueue.o \
   lifter.o \
 
 VIS_PROG=vis
@@ -31,9 +34,14 @@ CHECKER_OBJECTS=\
   $(COMMON_OBJECTS) \
   checker.o \
 
+PQTEST_PROG=pqtest
+PQTEST_OBJECTS=\
+  pqueue.o \
+  pqtest.o \
+
 .PHONY: all clean
 
-all: $(LIFTER_PROG) $(VIS_PROG) $(CHECKER_PROG)
+all: $(LIFTER_PROG) $(VIS_PROG) $(CHECKER_PROG) $(PQTEST_PROG)
 
 $(LIFTER_PROG): $(LIFTER_OBJECTS)
 	$(CC) $(CFLAGS) $(LIFTER_OBJECTS) -o $(LIFTER_PROG) $(LIFTER_LFLAGS)
@@ -44,21 +52,24 @@ $(VIS_PROG): $(VIS_OBJECTS)
 $(CHECKER_PROG): $(CHECKER_OBJECTS)
 	$(CC) $(CFLAGS) $(CHECKER_OBJECTS) -o $(CHECKER_PROG) $(CHECKER_LFLAGS)
 
+$(PQTEST_PROG): $(PQTEST_OBJECTS)
+	$(CC) $(CFLAGS) $(PQTEST_OBJECTS) -o $(PQTEST_PROG) $(PQTEST_LFLAGS)
+
 clean:
-	$(DEL) $(LIFTER_OBJECTS)
-	$(DEL) $(LIFTER_PROG)
-	$(DEL) $(VIS_OBJECTS)
-	$(DEL) $(VIS_PROG)
-	$(DEL) $(CHECKER_OBJECTS)
-	$(DEL) $(CHECKER_PROG)
+	$(DEL) $(LIFTER_OBJECTS) $(LIFTER_PROG)
+	$(DEL) $(VIS_OBJECTS) $(VIS_PROG)
+	$(DEL) $(CHECKER_OBJECTS) $(CHECKER_PROG)
+	$(DEL) $(PQTEST_OBJECTS) $(PQTEST_PROG)
 
 # FIXME: Manual enumeration of dependencies.
 mine.o: mine.h
 
-lifter.o: mine.h
+lifter.o: mine.h pqueue.h
 
 vis.o: sdltxt.h mine.h
 
 sdltxt.o: sdltxt.h
 
 checker.o: mine.h
+
+pqtest.o: pqueue.h

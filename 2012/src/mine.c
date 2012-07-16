@@ -32,6 +32,9 @@ static uint16_t lift_y = INVALID_Y;
 
 static uint16_t num_rocks = 0U;
 
+static pos_t* lambda_locs = NULL;
+
+static uint16_t lambdas_orig = 0U;
 static uint16_t lambdas_left = 0U;
 static uint16_t lambdas_mined = 0U;
 
@@ -128,6 +131,19 @@ mine_init(FILE* map_fp) {
     }
   }
 
+  lambdas_orig = lambdas_left;
+  lambda_locs = (pos_t*)malloc(lambdas_orig * sizeof(pos_t));
+  int l = 0;
+  for (int i = 0; i < num_rows; i++) {
+    for (int j = 0; j < num_cols; j++) {
+      if (mine_map[i][j] == ENTITY_LAMBDA) {
+        lambda_locs[l].x = j;
+        lambda_locs[l].y = i;
+        l++;
+      }
+    }
+  }
+
   if (getenv("PINNED_ROCKS") != NULL) {
     pinned_rocks = true;
   } else {
@@ -160,9 +176,9 @@ get_num_cols(void) {
 }
 
 char
-get_entity_at(uint16_t x, uint16_t y) {
-  if ((x < num_cols) && (y < num_rows)) {
-    return mine_map[y][x];
+get_entity_at(const pos_t* pos) {
+  if ((pos->x < num_cols) && (pos->y < num_rows)) {
+    return mine_map[pos->y][pos->x];
   } else {
     return ENTITY_UNKNOWN;
   }
@@ -368,18 +384,29 @@ get_cmds(void) {
 }
 
 void
-get_lift_pos(uint16_t* x, uint16_t* y) {
-  *x = lift_x;
-  *y = lift_y;
+get_lift_pos(pos_t* pos) {
+  pos->x = lift_x;
+  pos->y = lift_y;
 }
 
 void
-get_robot_pos(uint16_t* x, uint16_t* y) {
-  *x = robot_x;
-  *y = robot_y;
+get_robot_pos(pos_t* pos) {
+  pos->x = robot_x;
+  pos->y = robot_y;
 }
 
 uint16_t
 get_num_lambdas_left(void) {
   return lambdas_left;
+}
+
+bool
+are_rocks_pinned(void) {
+  return pinned_rocks;
+}
+
+pos_t*
+get_orig_lambdas(uint16_t* num_orig_lambdas) {
+  *num_orig_lambdas = lambdas_orig;
+  return lambda_locs;
 }

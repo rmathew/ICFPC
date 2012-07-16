@@ -10,21 +10,36 @@ function chk_prog() {
 }
 
 chk_prog checker
+chk_prog pqtest
 
 RET_STATUS=0
 TEST_NUM=0
+
+function chk_pqueue() {
+  TEST_NUM=`expr $TEST_NUM + 1`
+  ./pqtest
+  if [ "$?" == "0" ]
+  then
+    echo Test $TEST_NUM \(pqueue\): PASSED
+  else
+    echo Test $TEST_NUM \(pqueue\): FAILED
+    RET_STATUS=1
+  fi
+}
+
 function chk_map() {
   TEST_NUM=`expr $TEST_NUM + 1`
   ./checker ../task/maps/$1.map $2 $3 $4
   if [ "$?" == "0" ]
   then
-    echo Test $TEST_NUM \($1\): PASSED
+    echo Test $TEST_NUM \($1.map\): PASSED
   else
-    echo Test $TEST_NUM \($1\): FAILED
+    echo Test $TEST_NUM \($1.map\): FAILED
     RET_STATUS=1
   fi
 }
 
+chk_pqueue
 chk_map sample DDDLLLLLLURRRRRRRRRRLLLLLLDDDDDDDDLLLRRRRRRRRDDRRRD WON 399
 chk_map rocks_fall1 L LOST -1
 chk_map rocks_fall2 L ABORTED -1
