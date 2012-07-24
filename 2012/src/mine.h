@@ -21,6 +21,9 @@
 
 #define MAX_CMDS 4096U
 
+#define DIFF(A,B) (((A) > (B)) ? ((A) - (B)) : ((B) - (A)))
+#define DIST(A,B) (DIFF((A).x, (B).x) + DIFF((A).y, (B).y))
+
 typedef enum {
   PLAYING,
   WON,
@@ -31,6 +34,8 @@ typedef enum {
 typedef struct {
   uint16_t x, y;
 } pos_t;
+
+#define SAME_POS(A,B) (((A).x == (B).x) && ((A).y == (B).y))
 
 extern int mine_init(FILE* map_fp);
 extern bool are_rocks_pinned(void);

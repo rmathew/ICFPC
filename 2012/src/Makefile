@@ -21,6 +21,7 @@ LIFTER_PROG=lifter
 LIFTER_OBJECTS=\
   $(COMMON_OBJECTS) \
   pqueue.o \
+  astar.o \
   lifter.o \
 
 VIS_PROG=vis
@@ -65,6 +66,8 @@ clean:
 mine.o: mine.h
 
 lifter.o: mine.h pqueue.h
+
+astar.o: mine.h astar.h
 
 vis.o: sdltxt.h mine.h
 
