@@ -7,15 +7,35 @@
 #include "pqueue.h"
 #include "astar.h"
 
-#define MAX_ASTAR_NODES 1024U
+/*
+ * Implements the A-Star algorithm as described in the corresponding Wikipedia
+ * article as of 15-July-2012:
+ * http://en.wikipedia.org/w/index.php?title=A*_search_algorithm&oldid=502398507
+ * (http://en.wikipedia.org/wiki/A*_search_algorithm)
+ *
+ * We use the taxicab metric:
+ *
+ *   http://en.wikipedia.org/wiki/Taxicab_geometry
+ *
+ * for the heuristic h(x) in A-Star, which makes it easy to implement it
+ * efficiently.
+ */
+
+#define MAX_ASTAR_NODES 8192U
 
 typedef struct astar_node {
   pos_t pos;
   uint16_t g_score;
   uint16_t f_score;
-  char reach_cmd;
   struct astar_node* came_from;
+  char reach_cmd;
 } astar_node_t;
+
+static astar_node_t all_nodes[MAX_ASTAR_NODES];
+static uint16_t num_astar_nodes = 0U;
+
+static const astar_node_t* closed_set[MAX_ASTAR_NODES];
+static uint16_t num_elts_closed = 0U;
 
 static int
 cmp_astar_nodes(const void* a1, const void* a2) {
@@ -33,6 +53,25 @@ equal_astar_nodes(const void* a1, const void* a2) {
   pos_t p1 = ((astar_node_t*)a1)->pos;
   pos_t p2 = ((astar_node_t*)a2)->pos;
   return ((p1.x == p2.x) && (p1.y == p2.y));
+}
+
+static astar_node_t*
+new_astar_node(const pos_t* p) {
+  astar_node_t* ret_val = NULL;
+  if (num_astar_nodes < MAX_ASTAR_NODES) {
+    ret_val = (all_nodes + num_astar_nodes);
+    ret_val->pos.x = p->x;
+    ret_val->pos.y = p->y;
+    ret_val->g_score = UINT16_MAX;
+    ret_val->f_score = UINT16_MAX;
+    ret_val->came_from = NULL;
+    ret_val->reach_cmd = CMD_UNKNOWN;
+    num_astar_nodes++;
+  } else {
+    fprintf(stderr, "ERROR: Cannot create any more nodes.\n");
+    exit(1);
+  }
+  return ret_val;
 }
 
 static void
@@ -55,21 +94,15 @@ maybe_add_neighbor(uint16_t x, uint16_t y, char in_cmd,
     break;
   }
   if (valid_neighbor) {
-    astar_node_t* n = (astar_node_t*)malloc(sizeof(astar_node_t));
-    n->pos.x = x;
-    n->pos.y = y;
-    n->g_score = UINT16_MAX;
-    n->f_score = UINT16_MAX;
-    n->came_from = NULL;
+    astar_node_t* n = new_astar_node(&p);
     n->reach_cmd = in_cmd;
-
     neighbors[*found_p] = n;
     *found_p = *found_p + 1U;
   }
 }
 
 static int
-find_neighbors(astar_node_t* s, astar_node_t* neighbors[]) {
+find_neighbors(const astar_node_t* s, astar_node_t* neighbors[]) {
   uint16_t found = 0U;
 
   uint16_t s_x = s->pos.x;
@@ -89,10 +122,10 @@ find_neighbors(astar_node_t* s, astar_node_t* neighbors[]) {
 }
 
 static bool
-has_node(astar_node_t* set[], uint16_t max, astar_node_t* n) {
+have_node_in_closed_set(const astar_node_t* n) {
   bool ret_val = false;
-  for (int i = 0; i < max; i++) {
-    if (equal_astar_nodes(set[i], n)) {
+  for (uint16_t i = 0U; i < num_elts_closed; i++) {
+    if (equal_astar_nodes(closed_set[i], n)) {
       ret_val = true;
       break;
     }
@@ -100,34 +133,42 @@ has_node(astar_node_t* set[], uint16_t max, astar_node_t* n) {
   return ret_val;
 }
 
-uint16_t
-astar_path(const pos_t* start_pos, const pos_t* goal_pos, char* path) {
-  uint16_t ret_val = 0U;
-  astar_node_t* path_end_pt = NULL;
+static void
+add_to_closed_set(const astar_node_t* n) {
+  if (!have_node_in_closed_set(n)) {
+    closed_set[num_elts_closed++] = n;
+  }
+}
 
-  astar_node_t* start = (astar_node_t*)malloc(sizeof(astar_node_t));
-  start->pos.x = start_pos->x;
-  start->pos.y = start_pos->y;
-  start->came_from = NULL;
+static void
+clear_closed_set(void) {
+  num_elts_closed = 0U;
+}
+
+static uint16_t
+heuristic_cost_estimate(const astar_node_t* a, const astar_node_t* b) {
+  return DIST(a->pos, b->pos);
+}
+
+int32_t
+astar_path(const pos_t* start_pos, const pos_t* goal_pos, char* path) {
+  // Reset all the nodes.
+  num_astar_nodes = 0U;
+
+  astar_node_t* start = new_astar_node(start_pos);
   start->reach_cmd = CMD_WAIT;
 
-  astar_node_t* goal = (astar_node_t*)malloc(sizeof(astar_node_t));
-  goal->pos.x = goal_pos->x;
-  goal->pos.y = goal_pos->y;
-  goal->came_from = NULL;
+  astar_node_t* goal = new_astar_node(goal_pos);
   goal->reach_cmd = CMD_ABORT;
-  goal->g_score = UINT16_MAX;
-  goal->f_score = UINT16_MAX;
 
   start->g_score = 0U;
-  start->f_score = DIST(start->pos, goal->pos);
+  start->f_score = heuristic_cost_estimate(start, goal);
 
-  astar_node_t* closed_set[MAX_ASTAR_NODES];
-  uint16_t num_elts_closed = 0U;
-
+  clear_closed_set();
   pqueue_t* open_set = pq_create(MAX_ASTAR_NODES, cmp_astar_nodes);
   pq_insert(open_set, start);
 
+  astar_node_t* path_end_pt = NULL;
   while (!pq_is_empty(open_set)) {
     astar_node_t* current = (astar_node_t*)pq_delmin(open_set);
     if (equal_astar_nodes(current, goal)) {
@@ -135,12 +176,12 @@ astar_path(const pos_t* start_pos, const pos_t* goal_pos, char* path) {
       break;
     }
 
-    closed_set[num_elts_closed++] = current;
+    add_to_closed_set(current);
 
     astar_node_t* neighbors[4];
     uint16_t num_neighbors = find_neighbors(current, neighbors);
     for (int i = 0; i < num_neighbors; i++) {
-      if (has_node(closed_set, num_elts_closed, neighbors[i])) {
+      if (have_node_in_closed_set(neighbors[i])) {
         continue;
       }
 
@@ -152,26 +193,28 @@ astar_path(const pos_t* start_pos, const pos_t* goal_pos, char* path) {
         neighbors[i]->came_from = current;
         neighbors[i]->g_score = tentative_g_score;
         neighbors[i]->f_score
-            = tentative_g_score + DIST(neighbors[i]->pos, goal->pos);
+            = tentative_g_score + heuristic_cost_estimate(neighbors[i], goal);
       }
     }
   }
 
+  int32_t ret_val = 0;
   if (path_end_pt != NULL) {
     do {
       path[ret_val++] = path_end_pt->reach_cmd;
       path_end_pt = path_end_pt->came_from;
     } while ((path_end_pt != NULL) && !(equal_astar_nodes(path_end_pt, start)));
 
-    // The path is in reverse.
-    int i, j;
-    char c;
-    for (i = 0, j = (ret_val - 1); i < j; i++, j--) {
-      c = path[i];
+    // The path obtained so far is the other way around.
+    for (int i = 0, j = (ret_val - 1); i < j; i++, j--) {
+      char tmp = path[i];
       path[i] = path[j];
-      path[j] = c;
+      path[j] = tmp;
     }
     path[ret_val] = '\0';
+  } else {
+    path[0] = '\0';
+    ret_val = -1;
   }
 
   pq_destroy(open_set);

@@ -29,8 +29,9 @@ find_next_goal(void) {
     pos_t* orig_lambdas = get_orig_lambdas(&num_orig_lambdas);
     for (int i = 0; i < num_orig_lambdas; i++) {
       if (get_entity_at(orig_lambdas + i) == ENTITY_LAMBDA) {
-        uint16_t the_dist = DIST(robot_pos, orig_lambdas[i]);
-        if (the_dist < dist_closest) {
+        int32_t the_dist
+            = astar_path(&robot_pos, (orig_lambdas + i), curr_path);
+        if ((the_dist >= 0) && (the_dist < dist_closest)) {
           dist_closest = the_dist;
           curr_goal.x = orig_lambdas[i].x;
           curr_goal.y = orig_lambdas[i].y;
@@ -63,7 +64,7 @@ main(int argc, char* argv[]) {
   }
 
   if (!are_rocks_pinned()) {
-    fprintf(stderr, "ERROR: Sorry, I can't deal with falling rocks yet. \n");
+    fprintf(stderr, "\nERROR: Sorry, I can't deal with falling rocks yet. \n");
     return 1;
   }
 

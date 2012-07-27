@@ -10,6 +10,11 @@
 #define LEFT_CHILD(x) (((x) * 2) + 1)
 #define RIGHT_CHILD(x) (((x) * 2) + 2)
 
+/*
+ * A simple heap-based priority-queue implementation based on the outline
+ * given in "Data Structures and Algorithms" by Aho, Hopcroft and Ullman.
+ */
+
 pqueue_t*
 pq_create(int32_t max_elts, int32_t (*cmp_fn_p)(const void*, const void*)) {
   pqueue_t* ret_val = malloc(sizeof(pqueue_t));
