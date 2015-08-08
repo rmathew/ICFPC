@@ -19,23 +19,15 @@ Board::Board(const string& id, int width, int height)
       }
 }
 
-namespace {
-
-bool IsValidLocation(int x, int y, int width, int height) {
-    return x >= 0 && x < width && y >= 0 && y < height;
-}
-
-}  // namespace
-
 CellState Board::GetCellState(int x, int y) const {
-    if (!IsValidLocation(x, y, width_, height_)) {
+    if (!IsValidLocation(x, y)) {
         return INVALID_CELL;
     }
     return board_state_[y][x];
 }
 
 bool Board::SetCellState(int x, int y, CellState new_state) {
-    if (!IsValidLocation(x, y, width_, height_)) {
+    if (!IsValidLocation(x, y)) {
         return false;
     }
     board_state_[y][x] = new_state;
@@ -64,7 +56,7 @@ bool ParseInputFile(const string& file_name, Json::Value* root) {
     return ok;
 }
 
-bool GetBoardSize(const Json::Value& root, string* id, int* width,
+bool GetBoardAttrs(const Json::Value& root, string* id, int* width,
   int* height) {
     *width = root.get("width", -1).asInt();
     *height = root.get("height", -1).asInt();
@@ -142,8 +134,8 @@ Board* Board::Create(const string& file_name) {
 
     string id(file_name);
     int width, height;
-    bool size_ok = GetBoardSize(root, &id, &width, &height);
-    if (!size_ok) {
+    bool attrs_ok = GetBoardAttrs(root, &id, &width, &height);
+    if (!attrs_ok) {
         return nullptr;
     }
     Board* board = new Board(id, width, height);
@@ -157,4 +149,8 @@ Board* Board::Create(const string& file_name) {
     }
 
     return board;
+}
+
+bool Board::IsValidLocation(int x, int y) const {
+    return x >= 0 && x < width_ && y >= 0 && y < height_;
 }

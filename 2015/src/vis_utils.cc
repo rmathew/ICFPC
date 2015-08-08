@@ -4,9 +4,9 @@
 
 namespace {
 
-constexpr double kHalfSqrt3 = 0.8660254037844386;
+constexpr double kSqrt3ByTwo = 0.8660254037844386;
+constexpr double kTwoBySqrt3 = 1.1547005383792515;
 constexpr double kTwiceSqrt3 = 3.4641016151377544;
-constexpr double kOneBySqrt3 = 0.5773502691896257;
 
 void DrawHorizLine(SDL_Surface* screen, Uint16 x, Uint16 y, Uint16 length,
   Uint32 color) {
@@ -14,7 +14,7 @@ void DrawHorizLine(SDL_Surface* screen, Uint16 x, Uint16 y, Uint16 length,
         return;
     }
 
-    int bytes_per_pixel = screen->format->BytesPerPixel;
+    const Uint8 bytes_per_pixel = screen->format->BytesPerPixel;
     Uint8* buff = static_cast<Uint8*>(screen->pixels) + y * screen->pitch +
       x * bytes_per_pixel;
 
@@ -67,26 +67,16 @@ void DrawHorizLine(SDL_Surface* screen, Uint16 x, Uint16 y, Uint16 length,
 }  // namespace
 
 Uint16 GetHexHeight(Uint16 hex_width) {
-    const Uint16 body_height = static_cast<Uint16>(
-      static_cast<double>(hex_width) * kOneBySqrt3);
-    return 2 * body_height;
+    return static_cast<Uint16>(static_cast<double>(hex_width) * kTwoBySqrt3);
 }
 
 Uint16 GetHexWidth(Uint16 hex_height) {
-    return static_cast<Uint16>(static_cast<double>(hex_height) * kHalfSqrt3);
-}
-
-Uint16 GetHexCapHeight(Uint16 hex_width) {
-    const Uint16 body_height = static_cast<Uint16>(
-      static_cast<double>(hex_width) * kOneBySqrt3);
-    return body_height / 2;
+    return static_cast<Uint16>(static_cast<double>(hex_height) * kSqrt3ByTwo);
 }
 
 void DrawHex(SDL_Surface* screen, Uint16 x, Uint16 y, Uint16 hex_width,
   Uint32 color) {
-    const Uint16 body_height = static_cast<Uint16>(
-      static_cast<double>(hex_width) * kOneBySqrt3);
-    const Uint16 cap_height = body_height / 2;
+    const Uint16 cap_height = GetHexHeight(hex_width) / 4;
     for (Uint16 i = 0; i < cap_height; ++i) {
         Uint16 line_width =
           static_cast<Uint16>(static_cast<double>(i) * kTwiceSqrt3);
@@ -95,6 +85,7 @@ void DrawHex(SDL_Surface* screen, Uint16 x, Uint16 y, Uint16 hex_width,
         ++y;
     }
 
+    const Uint16 body_height = 2 * cap_height;
     for (Uint16 i = 0; i < body_height; ++i) {
         DrawHorizLine(screen, x, y, hex_width, color);
         ++y;

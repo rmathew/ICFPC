@@ -14,6 +14,7 @@ bool ParseCommonArgs(int argc, char* argv[], CommonArgs* common_args) {
         if (strcmp(argv[i], "-f") == 0) {
             next_arg_input_file_name = true;
         } else if (strcmp(argv[i], "-p") == 0) {
+            next_arg_phrase_of_power = true;
         } else if (next_arg_input_file_name) {
             common_args->input_file_name.assign(argv[i]);
             next_arg_input_file_name = false;

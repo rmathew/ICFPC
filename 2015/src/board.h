@@ -43,6 +43,8 @@ class Board {
   private:
     Board(const ::std::string& id, int width, int height);
 
+    bool IsValidLocation(int x, int y) const;
+
     ::std::string id_;
     ::std::vector<Unit> units_;
     int width_;
