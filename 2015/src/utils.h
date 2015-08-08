@@ -3,11 +3,11 @@
 
 #include <string>
 
-struct CmdLine {
+struct CommonArgs {
     ::std::string input_file_name;
     ::std::string phrase_of_power;
 };
 
-bool ParseCommandLine(int argc, char* argv[], CmdLine* cmd_line);
+bool ParseCommonArgs(int argc, char* argv[], CommonArgs* common_args);
 
 #endif /* UTILS_H_INCLUDED */
