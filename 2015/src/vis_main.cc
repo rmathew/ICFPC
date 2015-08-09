@@ -21,10 +21,12 @@ using ::std::unique_ptr;
 
 namespace {
 
-constexpr Uint16 kScreenWidth = 800;
-constexpr Uint16 kScreenHeight = 600;
-constexpr Uint16 kMinCellWidth = 10;
-constexpr Uint16 kInterCellPadding = 3;
+constexpr Uint16 kScreenWidth = 1024;
+constexpr Uint16 kScreenHeight = 768;
+constexpr Uint16 kCellPadding = 1;
+// Includes 2x inter-cell padding.
+constexpr Uint16 kMinCellWidth = 8;
+constexpr Uint16 kPivotWidth = 4;
 
 struct ScreenInfo {
     // Not owned.
@@ -32,7 +34,9 @@ struct ScreenInfo {
     Uint32 empty_cell_color;
     Uint32 full_cell_color;
     Uint32 unit_cell_color;
+    Uint32 pivot_color;
     Uint32 background_color;
+    // Includes 2x inter-cell padding.
     Uint16 cell_width;
 };
 
@@ -54,43 +58,6 @@ class ScopedSurfaceLocker {
     // Not owned.
     SDL_Surface* surface_;
 };
-
-bool IsBoardSizeOk(const Board* board, ScreenInfo* screen_info) {
-    constexpr Uint32 kEffectiveMinCellWidth = kMinCellWidth + kInterCellPadding;
-    // Odd rows are displaced to the right.
-    const Uint32 width_needed =
-      kEffectiveMinCellWidth * board->GetWidth() + kEffectiveMinCellWidth / 2;
-    if (width_needed >= kScreenWidth) {
-        cerr << "ERROR: Board too wide to be displayed." << endl;
-        return false;
-    }
-
-    const Uint32 min_cell_height = GetHexHeight(kMinCellWidth);
-
-    // Rows overlap vertically.
-    const Uint32 effective_min_cell_height =
-      (3 * min_cell_height / 4) + kInterCellPadding;
-    // The last row needs more than the average space.
-    const Uint32 height_needed =
-      effective_min_cell_height * board->GetHeight() + min_cell_height / 4 +
-      kInterCellPadding;
-    if (height_needed >= kScreenHeight) {
-        cerr << "ERROR: Board too tall to be displayed." << endl;
-        return false;
-    }
-
-    // Solve: (x + padding) * board_width + (x + padding) / 2 = screen_width
-    const Uint16 max_cw_by_width
-      = (2 * kScreenWidth / (2 * board->GetWidth() + 1)) - kInterCellPadding;
-    // Solve: (y + padding) * board_height + (y / 3 + padding) = screen_height
-    const Uint16 max_avg_height =
-      ((3 * kScreenHeight - 2 * kInterCellPadding) /
-       (3 * board->GetHeight() + 1)) - kInterCellPadding;
-    const Uint16 max_cw_by_height = GetHexWidth(4 * max_avg_height / 3);
-    screen_info->cell_width = min<Uint16>(max_cw_by_width, max_cw_by_height);
-
-    return true;
-}
 
 bool InitVisualizer(const string& board_id, Uint16 width, Uint16 height,
   bool full_screen, ScreenInfo* screen_info) {
@@ -140,8 +107,10 @@ bool InitVisualizer(const string& board_id, Uint16 width, Uint16 height,
     screen_info->empty_cell_color = SDL_MapRGB(screen->format, 88, 110, 117);
     // Solarized "yellow".
     screen_info->full_cell_color = SDL_MapRGB(screen->format, 181, 137, 0);
-    // Solarized "blue".
-    screen_info->unit_cell_color = SDL_MapRGB(screen->format, 38, 139, 210);
+    // Solarized "orange".
+    screen_info->unit_cell_color = SDL_MapRGB(screen->format, 203, 75, 22);
+    // Solarized "base02".
+    screen_info->pivot_color = SDL_MapRGB(screen->format, 7, 54, 66);
     // Solarized "base03".
     screen_info->background_color = SDL_MapRGB(screen->format, 0, 43, 54);
 
@@ -160,29 +129,81 @@ bool InitVisualizer(const string& board_id, Uint16 width, Uint16 height,
     return true;
 }
 
-void DisplayBoard(Board* board, ScreenInfo* screen_info) {
-    const Uint16 cell_height = GetHexHeight(screen_info->cell_width);
-    const Uint16 eff_cell_width = screen_info->cell_width + kInterCellPadding;
-    const Uint16 eff_cell_height = (3 * cell_height / 4) + kInterCellPadding;
-    const Uint16 init_x = (kScreenWidth - eff_cell_width * board->GetWidth() -
+bool IsBoardSizeOk(const Board* board, ScreenInfo* screen_info) {
+    const Uint32 avail_screen_width = screen_info->screen->w;
+    // Odd rows are displaced to the right.
+    const Uint32 width_needed =
+      kMinCellWidth * board->GetWidth() + kMinCellWidth / 2;
+    if (width_needed >= avail_screen_width) {
+        cerr << "ERROR: Board too wide (" << board->GetWidth()
+          << ") to be displayed." << endl;
+        return false;
+    }
+
+    const Uint32 avail_screen_height = screen_info->screen->h;
+    const Uint32 min_cell_height = GetHexHeight(kMinCellWidth);
+    // Rows overlap vertically; effective cell-height is 3/4 of cell-height.
+    // The last row needs more than the average height.
+    const Uint32 height_needed =
+      3 * min_cell_height * board->GetHeight() / 4 + min_cell_height / 4;
+    if (height_needed >= avail_screen_height) {
+        cerr << "ERROR: Board too tall (" << board->GetHeight()
+          << ") to be displayed." << endl;
+        return false;
+    }
+
+    // Solve: x * board_width + x/2 = screen_width
+    const Uint16 max_cw_by_width =
+      2 * avail_screen_width / (2 * board->GetWidth() + 1);
+    // Solve: 3/4 * y * board_height + y/4 = screen_height
+    const Uint16 max_ch_by_height =
+      4 * avail_screen_height / (3 * board->GetHeight() + 1);
+    const Uint16 max_cw_by_height = GetHexWidth(max_ch_by_height);
+    screen_info->cell_width = min<Uint16>(max_cw_by_width, max_cw_by_height);
+
+    return true;
+}
+
+Uint32 GetCellColor(const Board* board, int x, int y,
+  const ScreenInfo* screen_info) {
+    const CellState cell_state = board->GetCellState(x, y);
+    if (cell_state == FULL_CELL) {
+        return screen_info->full_cell_color;
+    }
+    if (board->IsOccupiedByUnit(x, y)) {
+        return screen_info->unit_cell_color;
+    }
+    return screen_info->empty_cell_color;
+}
+
+void DisplayBoard(const Board* board, const ScreenInfo* screen_info) {
+    const Uint16 avg_cell_height =
+      3 * GetHexHeight(screen_info->cell_width) / 4;
+    const Uint16 init_x = (screen_info->screen->w -
+      screen_info->cell_width * board->GetWidth() -
       screen_info->cell_width / 2) / 2;
-    Uint16 y = (kScreenHeight - eff_cell_height * board->GetHeight() -
-      cell_height / 4 - kInterCellPadding) / 2;
+    const Uint16 init_y = (screen_info->screen->h -
+      avg_cell_height * board->GetHeight() - avg_cell_height / 3) / 2;
+    const Uint16 drawn_cell_width = screen_info->cell_width - 2 * kCellPadding;
     {
         ScopedSurfaceLocker sl(screen_info->screen);
+        Uint16 y = init_y + kCellPadding;
         for (int i = 0; i < board->GetHeight(); ++i) {
-            Uint16 x = init_x;
+            Uint16 x = init_x + kCellPadding;
             if ((i % 2) == 1) {
                 x += (screen_info->cell_width / 2);
             }
             for (int j = 0; j < board->GetWidth(); ++j) {
-                const CellState cell_state = board->GetCellState(j, i);
-                DrawHex(screen_info->screen, x, y, screen_info->cell_width,
-                  (cell_state == EMPTY_CELL) ? screen_info->empty_cell_color :
-                  screen_info->full_cell_color);
-                x += eff_cell_width;
+                DrawHex(screen_info->screen, x, y, drawn_cell_width,
+                  GetCellColor(board, j, i, screen_info));
+                if (board->IsUnitPivot(j, i)) {
+                    DrawPivot(screen_info->screen, x + drawn_cell_width / 2,
+                      y + 2 * avg_cell_height / 3, kPivotWidth,
+                      screen_info->pivot_color);
+                }
+                x += screen_info->cell_width;
             }
-            y += eff_cell_height;
+            y += avg_cell_height;
         }
     }
     SDL_UpdateRect(screen_info->screen, 0, 0, 0, 0);
@@ -224,19 +245,20 @@ int main(int argc, char* argv[]) {
     if (!ParseCommonArgs(argc, argv, &common_args)) {
         return 1;
     }
+
     unique_ptr<Board> board(Board::Create(common_args.input_file_name));
     if (!board) {
         return 2;
     }
-    ScreenInfo screen_info;
-    if (!IsBoardSizeOk(board.get(), &screen_info)) {
-        return 3;
-    }
     cout << "INFO: Displaying a " << board->GetWidth() << "x"
       << board->GetHeight() << " board (" << board->GetId() << ")." << endl;
 
-    if (!InitVisualizer(board->GetId(), kScreenWidth, kScreenHeight, false,
-        &screen_info)) {
+    ScreenInfo screen_info;
+    if (!InitVisualizer(board->GetId(), kScreenWidth, kScreenHeight,
+        false /* full_screen */, &screen_info)) {
+        return 3;
+    }
+    if (!IsBoardSizeOk(board.get(), &screen_info)) {
         return 4;
     }
     bool keep_going = true;

@@ -99,3 +99,13 @@ void DrawHex(SDL_Surface* screen, Uint16 x, Uint16 y, Uint16 hex_width,
         ++y;
     }
 }
+
+void DrawPivot(SDL_Surface* screen, Uint16 x, Uint16 y, Uint16 pivot_width,
+  Uint32 color) {
+    const Uint16 start_x = x - pivot_width / 2;
+    const Uint16 start_y = y - pivot_width / 2;
+    const Uint16 end_y = start_y + pivot_width;
+    for (Uint16 i = start_y; i < end_y; ++i) {
+        DrawHorizLine(screen, start_x, i, pivot_width, color);
+    }
+}

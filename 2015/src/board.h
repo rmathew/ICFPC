@@ -1,6 +1,7 @@
 #ifndef BOARD_H_INCLUDED
 #define BOARD_H_INCLUDED
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -38,21 +39,29 @@ class Board {
 
     CellState GetCellState(int x, int y) const;
 
-    bool SetCellState(int x, int y, CellState new_state);
+    bool IsOccupiedByUnit(int x, int y) const;
+
+    bool IsUnitPivot(int x, int y) const;
 
   private:
     Board(const ::std::string& id, int width, int height);
 
     bool IsValidLocation(int x, int y) const;
 
+    void SpawnNextUnit();
+
     ::std::string id_;
-    ::std::vector<Unit> units_;
+    ::std::vector<Unit> available_units_;
     int width_;
     int height_;
     int source_length_;
     ::std::vector<int> source_seeds_;
 
     ::std::vector<::std::vector<CellState>> board_state_;
+    int current_game_;
+    int current_unit_index_;
+    Location current_unit_location_;
+    uint64_t current_seed_;
 };
 
 #endif /* BOARD_H_INCLUDED */
