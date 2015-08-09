@@ -1,8 +1,8 @@
 #include <SDL.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>

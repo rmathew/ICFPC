@@ -70,9 +70,9 @@ class Board {
 
     bool IsBoardLocationValid(int x, int y) const;
 
-    bool IsNewLocationValidForCurrentUnit(int x, int y) const;
+    bool IsUnitLocationValid(const Unit* unit) const;
 
-    bool PlaceCurrentUnitAt(int x, int y, bool spawn_on_failure);
+    bool ReplaceCurrentUnit(Unit* new_unit, bool spawn_on_failure);
 
     void LockCurrentUnit();
 
@@ -86,8 +86,7 @@ class Board {
 
     ::std::vector<::std::vector<CellState>> board_cells_;
     int current_game_;
-    int current_unit_index_;
-    Location current_unit_location_;
+    ::std::unique_ptr<Unit> current_unit_;
     uint64_t current_seed_;
     int num_remaining_units_;
 };

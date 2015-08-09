@@ -1,7 +1,6 @@
 #include "utils.h"
 
-#include <string.h>
-
+#include <cstring>
 #include <iostream>
 
 using ::std::cerr;

@@ -1,6 +1,6 @@
 #include "vis_utils.h"
 
-#include <string.h>
+#include <cstring>
 
 namespace {
 
