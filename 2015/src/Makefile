@@ -18,8 +18,9 @@ endif
 
 COMMON_OBJECTS = \
     board.o \
-    utils.o \
+    input.o \
     jsoncpp.o \
+    utils.o \
 
 PLAYER = play_icfp2015
 PLAYER_OBJECTS = \

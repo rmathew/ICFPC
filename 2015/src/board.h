@@ -2,13 +2,27 @@
 #define BOARD_H_INCLUDED
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 enum CellState {
     INVALID_CELL,
     EMPTY_CELL,
+    VISITED_CELL,
     FULL_CELL,
+};
+
+enum MoveCommand {
+    MOVE_E,
+    MOVE_W,
+    MOVE_SE,
+    MOVE_SW,
+};
+
+enum TurnCommand {
+    TURN_CLOCKWISE,
+    TURN_COUNTER_CLOCKWISE,
 };
 
 struct Location {
@@ -21,47 +35,61 @@ struct Unit {
     Location pivot;
 };
 
+struct BoardConfig {
+    ::std::string id;
+    ::std::vector<Unit> units;
+    int width;
+    int height;
+    ::std::vector<Location> filled_cells;
+    int source_length;
+    ::std::vector<int> source_seeds;
+};
+
 class Board {
   public:
     static Board* Create(const ::std::string& file_name);
 
-    ::std::string GetId() const {
-        return id_;
-    }
-
-    int GetWidth() const {
-        return width_;
-    }
-
-    int GetHeight() const {
-        return height_;
+    const BoardConfig* GetConfig() const {
+        return config_.get();
     }
 
     CellState GetCellState(int x, int y) const;
 
-    bool IsOccupiedByUnit(int x, int y) const;
+    bool IsOccupiedByCurrentUnit(int x, int y) const;
 
-    bool IsUnitPivot(int x, int y) const;
+    bool IsCurrentUnitPivot(int x, int y) const;
+
+    bool MoveCurrentUnit(MoveCommand cmd);
+
+    bool TurnCurrentUnit(TurnCommand cmd);
+
+    bool IsGameOver() const;
 
   private:
-    Board(const ::std::string& id, int width, int height);
+    explicit Board(BoardConfig* config);
 
-    bool IsValidLocation(int x, int y) const;
+    bool IsBoardLocationValid(int x, int y) const;
 
-    void SpawnNextUnit();
+    bool IsNewLocationValidForCurrentUnit(int x, int y) const;
 
-    ::std::string id_;
-    ::std::vector<Unit> available_units_;
-    int width_;
-    int height_;
-    int source_length_;
-    ::std::vector<int> source_seeds_;
+    bool PlaceCurrentUnitAt(int x, int y, bool spawn_on_failure);
 
-    ::std::vector<::std::vector<CellState>> board_state_;
+    void LockCurrentUnit();
+
+    void MarkCurrentUnitCellsVisited();
+
+    void ClearVisitedCells();
+
+    bool SpawnNewUnit();
+
+    ::std::unique_ptr<BoardConfig> config_;
+
+    ::std::vector<::std::vector<CellState>> board_cells_;
     int current_game_;
     int current_unit_index_;
     Location current_unit_location_;
     uint64_t current_seed_;
+    int num_remaining_units_;
 };
 
 #endif /* BOARD_H_INCLUDED */

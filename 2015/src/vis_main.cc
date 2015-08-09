@@ -32,6 +32,7 @@ struct ScreenInfo {
     // Not owned.
     SDL_Surface* screen;
     Uint32 empty_cell_color;
+    Uint32 visited_cell_color;
     Uint32 full_cell_color;
     Uint32 unit_cell_color;
     Uint32 pivot_color;
@@ -105,6 +106,8 @@ bool InitVisualizer(const string& board_id, Uint16 width, Uint16 height,
     screen_info->screen = screen;
     // Solarized "base01".
     screen_info->empty_cell_color = SDL_MapRGB(screen->format, 88, 110, 117);
+    // Solarized "base1".
+    screen_info->visited_cell_color = SDL_MapRGB(screen->format, 147, 161, 161);
     // Solarized "yellow".
     screen_info->full_cell_color = SDL_MapRGB(screen->format, 181, 137, 0);
     // Solarized "orange".
@@ -131,11 +134,12 @@ bool InitVisualizer(const string& board_id, Uint16 width, Uint16 height,
 
 bool IsBoardSizeOk(const Board* board, ScreenInfo* screen_info) {
     const Uint32 avail_screen_width = screen_info->screen->w;
+    const BoardConfig* config = board->GetConfig();
     // Odd rows are displaced to the right.
     const Uint32 width_needed =
-      kMinCellWidth * board->GetWidth() + kMinCellWidth / 2;
+      kMinCellWidth * config->width + kMinCellWidth / 2;
     if (width_needed >= avail_screen_width) {
-        cerr << "ERROR: Board too wide (" << board->GetWidth()
+        cerr << "ERROR: Board too wide (" << config->width
           << ") to be displayed." << endl;
         return false;
     }
@@ -145,19 +149,19 @@ bool IsBoardSizeOk(const Board* board, ScreenInfo* screen_info) {
     // Rows overlap vertically; effective cell-height is 3/4 of cell-height.
     // The last row needs more than the average height.
     const Uint32 height_needed =
-      3 * min_cell_height * board->GetHeight() / 4 + min_cell_height / 4;
+      3 * min_cell_height * config->height / 4 + min_cell_height / 4;
     if (height_needed >= avail_screen_height) {
-        cerr << "ERROR: Board too tall (" << board->GetHeight()
+        cerr << "ERROR: Board too tall (" << config->height
           << ") to be displayed." << endl;
         return false;
     }
 
     // Solve: x * board_width + x/2 = screen_width
     const Uint16 max_cw_by_width =
-      2 * avail_screen_width / (2 * board->GetWidth() + 1);
+      2 * avail_screen_width / (2 * config->width + 1);
     // Solve: 3/4 * y * board_height + y/4 = screen_height
     const Uint16 max_ch_by_height =
-      4 * avail_screen_height / (3 * board->GetHeight() + 1);
+      4 * avail_screen_height / (3 * config->height + 1);
     const Uint16 max_cw_by_height = GetHexWidth(max_ch_by_height);
     screen_info->cell_width = min<Uint16>(max_cw_by_width, max_cw_by_height);
 
@@ -167,36 +171,53 @@ bool IsBoardSizeOk(const Board* board, ScreenInfo* screen_info) {
 Uint32 GetCellColor(const Board* board, int x, int y,
   const ScreenInfo* screen_info) {
     const CellState cell_state = board->GetCellState(x, y);
-    if (cell_state == FULL_CELL) {
-        return screen_info->full_cell_color;
+    Uint32 cell_color = 0ULL;
+    switch (cell_state) {
+      case EMPTY_CELL:
+        cell_color = screen_info->empty_cell_color;
+        break;
+
+      case VISITED_CELL:
+        if (board->IsOccupiedByCurrentUnit(x, y)) {
+            cell_color = screen_info->unit_cell_color;
+        } else {
+            cell_color = screen_info->visited_cell_color;
+        }
+        break;
+
+      case FULL_CELL:
+        cell_color = screen_info->full_cell_color;
+        break;
+
+      default:
+        cerr << "ERROR: Unexpected cell-state." << endl;
+        break;
     }
-    if (board->IsOccupiedByUnit(x, y)) {
-        return screen_info->unit_cell_color;
-    }
-    return screen_info->empty_cell_color;
+    return cell_color;
 }
 
 void DisplayBoard(const Board* board, const ScreenInfo* screen_info) {
     const Uint16 avg_cell_height =
       3 * GetHexHeight(screen_info->cell_width) / 4;
+    const BoardConfig* config = board->GetConfig();
     const Uint16 init_x = (screen_info->screen->w -
-      screen_info->cell_width * board->GetWidth() -
+      screen_info->cell_width * config->width -
       screen_info->cell_width / 2) / 2;
     const Uint16 init_y = (screen_info->screen->h -
-      avg_cell_height * board->GetHeight() - avg_cell_height / 3) / 2;
+      avg_cell_height * config->height - avg_cell_height / 3) / 2;
     const Uint16 drawn_cell_width = screen_info->cell_width - 2 * kCellPadding;
     {
         ScopedSurfaceLocker sl(screen_info->screen);
         Uint16 y = init_y + kCellPadding;
-        for (int i = 0; i < board->GetHeight(); ++i) {
+        for (int i = 0; i < config->height; ++i) {
             Uint16 x = init_x + kCellPadding;
             if ((i % 2) == 1) {
                 x += (screen_info->cell_width / 2);
             }
-            for (int j = 0; j < board->GetWidth(); ++j) {
+            for (int j = 0; j < config->width; ++j) {
                 DrawHex(screen_info->screen, x, y, drawn_cell_width,
                   GetCellColor(board, j, i, screen_info));
-                if (board->IsUnitPivot(j, i)) {
+                if (board->IsCurrentUnitPivot(j, i)) {
                     DrawPivot(screen_info->screen, x + drawn_cell_width / 2,
                       y + 2 * avg_cell_height / 3, kPivotWidth,
                       screen_info->pivot_color);
@@ -209,7 +230,7 @@ void DisplayBoard(const Board* board, const ScreenInfo* screen_info) {
     SDL_UpdateRect(screen_info->screen, 0, 0, 0, 0);
 }
 
-bool GetInput() {
+bool ProcessInput(Board* board, bool* board_changed) {
     SDL_Event evt;
     SDL_WaitEvent(&evt);
     switch (evt.type) {
@@ -221,6 +242,29 @@ bool GetInput() {
           case SDLK_ESCAPE:
             return false;
 
+          case SDLK_q:
+            return false;
+
+          case SDLK_LEFT:
+            board->MoveCurrentUnit(MOVE_W);
+            *board_changed = true;
+            break;
+
+          case SDLK_RIGHT:
+            board->MoveCurrentUnit(MOVE_E);
+            *board_changed = true;
+            break;
+
+          case SDLK_a:
+            board->MoveCurrentUnit(MOVE_SW);
+            *board_changed = true;
+            break;
+
+          case SDLK_s:
+            board->MoveCurrentUnit(MOVE_SE);
+            *board_changed = true;
+            break;
+
           default:
             break;
         }
@@ -230,12 +274,6 @@ bool GetInput() {
         break;
     }
     return true;
-}
-
-bool UpdateDisplay(Board* board, ScreenInfo* screen_info) {
-    DisplayBoard(board, screen_info);
-    bool keep_going = GetInput();
-    return keep_going;
 }
 
 }  // namespace
@@ -250,20 +288,33 @@ int main(int argc, char* argv[]) {
     if (!board) {
         return 2;
     }
-    cout << "INFO: Displaying a " << board->GetWidth() << "x"
-      << board->GetHeight() << " board (" << board->GetId() << ")." << endl;
+    const BoardConfig* config = board->GetConfig();
+    cout << "INFO: Displaying a " << config->width << "x" << config->height
+      << " board (" << config->id << ") with " << config->source_length
+      << " units per game for " << config->source_seeds.size() << " games."
+      << endl;
 
     ScreenInfo screen_info;
-    if (!InitVisualizer(board->GetId(), kScreenWidth, kScreenHeight,
+    if (!InitVisualizer(board->GetConfig()->id, kScreenWidth, kScreenHeight,
         false /* full_screen */, &screen_info)) {
         return 3;
     }
     if (!IsBoardSizeOk(board.get(), &screen_info)) {
         return 4;
     }
+    DisplayBoard(board.get(), &screen_info);
+
     bool keep_going = true;
     do {
-        keep_going = UpdateDisplay(board.get(), &screen_info);
+        bool board_changed = false;
+        keep_going = ProcessInput(board.get(), &board_changed);
+        if (board_changed) {
+            DisplayBoard(board.get(), &screen_info);
+        }
+        if (board->IsGameOver()) {
+            cout << "INFO: GAME OVER!" << endl;
+            keep_going = false;
+        }
     } while (keep_going);
 
     return 0;

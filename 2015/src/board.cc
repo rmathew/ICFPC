@@ -1,45 +1,42 @@
 #include "board.h"
 
-#include <iostream>
-#include <fstream>
-#include <memory>
+#include <algorithm>
 
-#include "jsoncpp.h"
+#include "input.h"
 
-using ::std::cerr;
-using ::std::endl;
-using ::std::ifstream;
+using ::std::max;
+using ::std::min;
 using ::std::string;
-using ::std::vector;
 using ::std::unique_ptr;
+using ::std::vector;
 
-Board::Board(const string& id, int width, int height)
-  : id_(id), width_(width), height_(height), current_game_(0),
-  current_unit_index_(-1), current_seed_(0ULL) {
+Board::Board(BoardConfig* config)
+  : config_(config), current_game_(0), current_unit_index_(-1),
+  current_seed_(0ULL), num_remaining_units_(-1) {
     current_unit_location_.x = -1;
     current_unit_location_.y = -1;
 
-    board_state_.resize(height);
-    for (int i = 0; i < height; ++i) {
-        board_state_[i].resize(width, EMPTY_CELL);
+    board_cells_.resize(config_->height);
+    for (int i = 0; i < config_->height; ++i) {
+        board_cells_[i].resize(config_->width, EMPTY_CELL);
     }
 }
 
 CellState Board::GetCellState(int x, int y) const {
-    if (!IsValidLocation(x, y)) {
+    if (!IsBoardLocationValid(x, y)) {
         return INVALID_CELL;
     }
-    return board_state_[y][x];
+    return board_cells_[y][x];
 }
 
-bool Board::IsOccupiedByUnit(int x, int y) const {
-    if (!IsValidLocation(x, y)) {
+bool Board::IsOccupiedByCurrentUnit(int x, int y) const {
+    if (!IsBoardLocationValid(x, y)) {
         return false;
     }
     // FIXME: What about rotation?
     int trans_x = x - current_unit_location_.x;
     int trans_y = y - current_unit_location_.y;
-    const Unit& current_unit = available_units_[current_unit_index_];
+    const Unit& current_unit = config_->units[current_unit_index_];
     for (const Location& a_location : current_unit.members) {
         if (a_location.x == trans_x && a_location.y == trans_y) {
             return true;
@@ -48,157 +45,140 @@ bool Board::IsOccupiedByUnit(int x, int y) const {
     return false;
 }
 
-bool Board::IsUnitPivot(int x, int y) const {
-    if (!IsValidLocation(x, y)) {
+bool Board::IsCurrentUnitPivot(int x, int y) const {
+    if (!IsBoardLocationValid(x, y)) {
         return false;
     }
     // FIXME: What about rotation?
     int trans_x = x - current_unit_location_.x;
     int trans_y = y - current_unit_location_.y;
-    const Unit& current_unit = available_units_[current_unit_index_];
+    const Unit& current_unit = config_->units[current_unit_index_];
     if (current_unit.pivot.x == trans_x && current_unit.pivot.y == trans_y) {
         return true;
     }
     return false;
 }
 
-namespace {
+bool Board::MoveCurrentUnit(MoveCommand cmd) {
+    int new_x = current_unit_location_.x;
+    int new_y = current_unit_location_.y;
+    switch (cmd) {
+      case MOVE_E:
+        new_x++;
+        break;
 
-bool ParseInputFile(const string& file_name, Json::Value* root) {
-    ifstream ifs(file_name);
-    if (!ifs.is_open()) {
-        cerr << "ERROR: Could not open the input-file \"" << file_name << "\"."
-          << endl;
-        return false;
-    }
+      case MOVE_W:
+        new_x--;
+        break;
 
-    Json::CharReaderBuilder rbuilder;
-    rbuilder["collectComments"] = false;
-    string errors;
-    bool ok = Json::parseFromStream(rbuilder, ifs, root, &errors);
-    ifs.close();
-    if (!ok) {
-        cerr << "ERROR: Invalid JSON in the input-file \""
-          << file_name << "\"." << endl << errors << endl;
+      case MOVE_SE:
+        if ((current_unit_location_.y % 2) == 1) {
+            new_x++;
+        }
+        new_y++;
+        break;
+
+      case MOVE_SW:
+        if ((current_unit_location_.y % 2) == 0) {
+            new_x--;
+        }
+        new_y++;
+        break;
     }
-    return ok;
+    return PlaceCurrentUnitAt(new_x, new_y, true /* spawn_on_failure */);
 }
 
-bool GetBoardAttrs(const Json::Value& root, string* id, int* width,
-  int* height) {
-    *width = root.get("width", -1).asInt();
-    *height = root.get("height", -1).asInt();
-    if (width <= 0 || height <= 0) {
-        cerr << "ERROR: Invalid width/height (" << width << ", " << height
-          << ")." << endl;
-        return false;
-    }
-    if (root.isMember("id")) {
-        id->assign("Board: ");
-        id->append(root["id"].asString());
-    }
-    return true;
+bool Board::TurnCurrentUnit(TurnCommand cmd) {
+    // TODO: Implement this.
+    return false;
 }
 
-void ParseLocation(const Json::Value& location_data, Location* location) {
-    if (location_data.isNull()) {
-        return;
-    }
-    location->x = location_data.get("x", -1).asInt();
-    location->y = location_data.get("y", -1).asInt();
+bool Board::IsGameOver() const {
+    return num_remaining_units_ <= 0;
 }
-
-void ParseLocationArray(const Json::Value& location_array_data,
-  vector<Location>* location_array) {
-    if (location_array_data.isNull()) {
-        return;
-    }
-    location_array->resize(location_array_data.size());
-    for (Json::ArrayIndex i = 0; i < location_array_data.size(); ++i) {
-        ParseLocation(location_array_data[i], &location_array->at(i));
-    }
-}
-
-void ParseUnits(const Json::Value& units_data, vector<Unit>* units) {
-    if (units_data.isNull()) {
-        return;
-    }
-    units->resize(units_data.size());
-    for (Json::ArrayIndex i = 0; i < units_data.size(); ++i) {
-        Unit* a_unit = &units->at(i);
-        const Json::Value a_unit_data = units_data[i];
-        ParseLocationArray(a_unit_data["members"], &a_unit->members);
-        ParseLocation(a_unit_data["pivot"], &a_unit->pivot);
-    }
-}
-
-void ParseIntArray(const Json::Value& int_array_data, vector<int>* int_array) {
-    if (int_array_data.isNull()) {
-        return;
-    }
-    int_array->resize(int_array_data.size());
-    for (Json::ArrayIndex i = 0; i < int_array_data.size(); ++i) {
-        int_array->at(i) = int_array_data[i].asInt();
-    }
-}
-
-bool GetInitBoardConfig(const Json::Value& root_data, vector<Unit>* units,
-  vector<Location>* filled_cells, int* source_length,
-  vector<int>* source_seeds) {
-    ParseUnits(root_data["units"], units);
-    if (units->size() == 0) {
-        cerr << "ERROR: No Units defined." << endl;
-        return false;
-    }
-    ParseLocationArray(root_data["filled"], filled_cells);
-    *source_length = root_data.get("sourceLength", -1).asInt();
-    if (*source_length <= 0) {
-        cerr << "ERROR: No Units in the source." << endl;
-        return false;
-    }
-    ParseIntArray(root_data["sourceSeeds"], source_seeds);
-    if (source_seeds->size() == 0) {
-        cerr << "ERROR: No source-seeds defined." << endl;
-        return false;
-    }
-    return true;
-}
-
-}  // namespace
 
 Board* Board::Create(const string& file_name) {
-    Json::Value root;
-    bool parse_ok = ParseInputFile(file_name, &root);
-    if (!parse_ok || root.isNull()) {
+    unique_ptr<BoardConfig> config(new BoardConfig);
+    if (!LoadBoardConfig(file_name, config.get())) {
         return nullptr;
     }
+    unique_ptr<Board> board(new Board(config.release()));
 
-    string id(file_name);
-    int width, height;
-    bool attrs_ok = GetBoardAttrs(root, &id, &width, &height);
-    if (!attrs_ok) {
+    for (const Location& location : board->config_->filled_cells) {
+        board->board_cells_[location.y][location.x] = FULL_CELL;
+    }
+    board->current_seed_ = board->config_->source_seeds[0];
+    board->num_remaining_units_ = board->config_->source_length;
+    if (!board->SpawnNewUnit()) {
         return nullptr;
     }
-    unique_ptr<Board> board(new Board(id, width, height));
-
-    vector<Location> filled_cells;
-    bool cfg_ok = GetInitBoardConfig(root, &board->available_units_,
-      &filled_cells, &board->source_length_, &board->source_seeds_);
-    if (!cfg_ok) {
-        return nullptr;
-    }
-
-    for (const Location& location : filled_cells) {
-        board->board_state_[location.y][location.x] = FULL_CELL;
-    }
-    board->current_seed_ = board->source_seeds_[0];
-    board->SpawnNextUnit();
-
     return board.release();
 }
 
-bool Board::IsValidLocation(int x, int y) const {
-    return x >= 0 && x < width_ && y >= 0 && y < height_;
+bool Board::IsBoardLocationValid(int x, int y) const {
+    return x >= 0 && x < config_->width && y >= 0 && y < config_->height;
+}
+
+bool Board::IsNewLocationValidForCurrentUnit(int x, int y) const {
+    if (!IsBoardLocationValid(x, y)) {
+        return false;
+    }
+    // FIXME: What about rotation?
+    const Unit& current_unit = config_->units[current_unit_index_];
+    for (const Location& a_location : current_unit.members) {
+        if (GetCellState(a_location.x + x, a_location.y + y) != EMPTY_CELL) {
+            return false;
+        }
+    }
+    const Location& pivot_loc = current_unit.pivot;
+    if (GetCellState(pivot_loc.x + x, pivot_loc.y + y) != EMPTY_CELL) {
+        return false;
+    }
+    return true;
+}
+
+bool Board::PlaceCurrentUnitAt(int x, int y, bool spawn_on_failure) {
+    if (IsNewLocationValidForCurrentUnit(x, y)) {
+        current_unit_location_.x = x;
+        current_unit_location_.y = y;
+        MarkCurrentUnitCellsVisited();
+        return true;
+    }
+    LockCurrentUnit();
+    return spawn_on_failure ? SpawnNewUnit() : false;
+}
+
+void Board::LockCurrentUnit() {
+    const Unit& current_unit = config_->units[current_unit_index_];
+    for (const Location& location : current_unit.members) {
+        const int x = current_unit_location_.x + location.x;
+        const int y = current_unit_location_.y + location.y;
+        if (IsBoardLocationValid(x, y)) {
+            board_cells_[y][x] = FULL_CELL;
+        }
+    }
+}
+
+void Board::MarkCurrentUnitCellsVisited() {
+    // FIXME: What about rotation?
+    const int x = current_unit_location_.x;
+    const int y = current_unit_location_.y;
+    const Unit& current_unit = config_->units[current_unit_index_];
+    for (const Location& a_location : current_unit.members) {
+        board_cells_[y + a_location.y][x + a_location.x] = VISITED_CELL;
+    }
+    const Location& pivot_loc = current_unit.pivot;
+    board_cells_[y + pivot_loc.y][x + pivot_loc.x] = VISITED_CELL;
+}
+
+void Board::ClearVisitedCells() {
+    for (int i = 0; i < config_->width; ++i) {
+        for (int j = 0; j < config_->height; ++j) {
+            if (board_cells_[j][i] == VISITED_CELL) {
+                board_cells_[j][i] = EMPTY_CELL;
+            }
+        }
+    }
 }
 
 namespace {
@@ -216,13 +196,35 @@ uint64_t NextRandSeed(uint64_t seed) {
     return (seed * kRandMultiplier + kRandIncrement) & kBits31To0Mask;
 }
 
+void GetNewUnitLocation(const Unit& unit, int board_width, int* x, int* y) {
+    int min_x = board_width;
+    int max_x = 0;
+    for (const Location& a_location : unit.members) {
+        min_x = min<int>(min_x, a_location.x);
+        max_x = max<int>(max_x, a_location.x);
+    }
+    const int unit_width = (max_x - min_x + 1);
+    *x = (board_width - unit_width) / 2;
+    *y = 0;
+}
+
 }  // namespace
 
-void Board::SpawnNextUnit() {
-    current_unit_index_ =
-      GetRandFromSeed(current_seed_) % available_units_.size();
-    current_seed_ = NextRandSeed(current_seed_);
-    // FIXME: Center the Unit.
-    current_unit_location_.x = 0;
-    current_unit_location_.y = 0;
+bool Board::SpawnNewUnit() {
+    bool spawned = false;
+    while (num_remaining_units_ > 0 && !spawned) {
+        current_unit_index_ =
+          GetRandFromSeed(current_seed_) % config_->units.size();
+        current_seed_ = NextRandSeed(current_seed_);
+        num_remaining_units_--;
+
+        ClearVisitedCells();
+
+        const Unit& new_unit = config_->units[current_unit_index_];
+        int new_unit_x, new_unit_y;
+        GetNewUnitLocation(new_unit, config_->width, &new_unit_x, &new_unit_y);
+        spawned = PlaceCurrentUnitAt(new_unit_x, new_unit_y,
+          false /* spawn_on_failure */);
+    }
+    return spawned;
 }
