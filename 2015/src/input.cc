@@ -38,8 +38,8 @@ void ParseLocation(const Json::Value& location_data, Location* location) {
     if (location_data.isNull()) {
         return;
     }
-    location->x = location_data.get("x", -1).asInt();
-    location->y = location_data.get("y", -1).asInt();
+    location->col = location_data.get("x", -1).asInt();
+    location->row = location_data.get("y", -1).asInt();
 }
 
 void ParseLocationArray(const Json::Value& location_array_data,
@@ -90,18 +90,49 @@ void GetBoardConfig(const Json::Value& root, BoardConfig* config) {
 }
 
 bool IsValidBoardConfig(const BoardConfig* config) {
-    if (config->units.size() == 0) {
-        cerr << "ERROR: No Units defined." << endl;
-        return false;
-    }
-    if (config->width <= 0) {
-        cerr << "ERROR: Invalid width (" << config->width << ")." << endl;
-        return false;
-    }
     if (config->height <= 0) {
         cerr << "ERROR: Invalid height (" << config->height << ")." << endl;
         return false;
     }
+    const int height = config->height;
+
+    if (config->width <= 0) {
+        cerr << "ERROR: Invalid width (" << config->width << ")." << endl;
+        return false;
+    }
+    const int width = config->width;
+
+    if (config->units.size() == 0) {
+        cerr << "ERROR: No Units defined." << endl;
+        return false;
+    }
+    for (const Unit& a_unit : config->units) {
+        for (const Location& a_location : a_unit.members) {
+            if (a_location.row < 0 || a_location.row >= height) {
+                cerr << "ERROR: Invalid row (" << a_location.row
+                  << ") for Unit-member." << endl;
+                return false;
+            }
+            if (a_location.col < 0 || a_location.col >= width) {
+                cerr << "ERROR: Invalid column (" << a_location.col
+                  << ") for Unit-member." << endl;
+                return false;
+            }
+        }
+    }
+    for (const Location& a_location : config->filled_cells) {
+        if (a_location.row < 0 || a_location.row >= height) {
+            cerr << "ERROR: Invalid row (" << a_location.row
+              << ") for filled cell." << endl;
+            return false;
+        }
+        if (a_location.col < 0 || a_location.col >= width) {
+            cerr << "ERROR: Invalid column (" << a_location.col
+              << ") for filled cell." << endl;
+            return false;
+        }
+    }
+
     if (config->source_length <= 0) {
         cerr << "ERROR: No Units in the source." << endl;
         return false;

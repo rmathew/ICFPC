@@ -168,9 +168,9 @@ bool IsBoardSizeOk(const Board* board, ScreenInfo* screen_info) {
     return true;
 }
 
-Uint32 GetCellColor(const Board* board, int x, int y,
+Uint32 GetCellColor(const Board* board, int row, int col,
   const ScreenInfo* screen_info) {
-    const CellState cell_state = board->GetCellState(x, y);
+    const CellState cell_state = board->GetCellState(row, col);
     Uint32 cell_color = 0ULL;
     switch (cell_state) {
       case EMPTY_CELL:
@@ -178,7 +178,7 @@ Uint32 GetCellColor(const Board* board, int x, int y,
         break;
 
       case VISITED_CELL:
-        if (board->IsOccupiedByCurrentUnit(x, y)) {
+        if (board->IsOccupiedByCurrentUnit(row, col)) {
             cell_color = screen_info->unit_cell_color;
         } else {
             cell_color = screen_info->visited_cell_color;
@@ -209,15 +209,15 @@ void DisplayBoard(const Board* board, const ScreenInfo* screen_info) {
     {
         ScopedSurfaceLocker sl(screen_info->screen);
         Uint16 y = init_y + kCellPadding;
-        for (int i = 0; i < config->height; ++i) {
+        for (int row = 0; row < config->height; ++row) {
             Uint16 x = init_x + kCellPadding;
-            if ((i % 2) == 1) {
+            if ((row % 2) == 1) {
                 x += (screen_info->cell_width / 2);
             }
-            for (int j = 0; j < config->width; ++j) {
+            for (int col = 0; col < config->width; ++col) {
                 DrawHex(screen_info->screen, x, y, drawn_cell_width,
-                  GetCellColor(board, j, i, screen_info));
-                if (board->IsCurrentUnitPivot(j, i)) {
+                  GetCellColor(board, row, col, screen_info));
+                if (board->IsCurrentUnitPivot(row, col)) {
                     DrawPivot(screen_info->screen, x + drawn_cell_width / 2,
                       y + 2 * avg_cell_height / 3, kPivotWidth,
                       screen_info->pivot_color);
@@ -255,6 +255,16 @@ bool ProcessInput(Board* board, bool* board_changed) {
             *board_changed = true;
             break;
 
+          case SDLK_UP:
+            board->TurnCurrentUnit(TURN_COUNTER_CLOCKWISE);
+            *board_changed = true;
+            break;
+
+          case SDLK_DOWN:
+            board->TurnCurrentUnit(TURN_CLOCKWISE);
+            *board_changed = true;
+            break;
+
           case SDLK_a:
             board->MoveCurrentUnit(MOVE_SW);
             *board_changed = true;
@@ -286,6 +296,7 @@ int main(int argc, char* argv[]) {
 
     unique_ptr<Board> board(Board::Create(common_args.input_file_name));
     if (!board) {
+        cerr << "ERROR: Could not create the board." << endl;
         return 2;
     }
     const BoardConfig* config = board->GetConfig();

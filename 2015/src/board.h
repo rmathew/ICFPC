@@ -26,8 +26,8 @@ enum TurnCommand {
 };
 
 struct Location {
-    int x;
-    int y;
+    int row;
+    int col;
 };
 
 struct Unit {
@@ -53,26 +53,32 @@ class Board {
         return config_.get();
     }
 
-    CellState GetCellState(int x, int y) const;
+    CellState GetCellState(int row, int col) const;
 
-    bool IsOccupiedByCurrentUnit(int x, int y) const;
+    bool IsOccupiedByCurrentUnit(int row, int col) const;
 
-    bool IsCurrentUnitPivot(int x, int y) const;
+    bool IsCurrentUnitPivot(int row, int col) const;
 
     bool MoveCurrentUnit(MoveCommand cmd);
 
     bool TurnCurrentUnit(TurnCommand cmd);
 
-    bool IsGameOver() const;
+    bool IsGameOver() const {
+        return !game_on_;
+    }
 
   private:
     explicit Board(BoardConfig* config);
 
-    bool IsBoardLocationValid(int x, int y) const;
+    bool IsBoardLocationValid(int row, int col) const;
 
-    bool IsUnitLocationValid(const Unit* unit) const;
+    bool IsNewUnitLocationValid(const Unit* new_unit) const;
 
     bool ReplaceCurrentUnit(Unit* new_unit, bool spawn_on_failure);
+
+    int GetLastFullRow();
+
+    void ClearRow(int row_idx);
 
     void LockCurrentUnit();
 
@@ -89,6 +95,7 @@ class Board {
     ::std::unique_ptr<Unit> current_unit_;
     uint64_t current_seed_;
     int num_remaining_units_;
+    bool game_on_;
 };
 
 #endif /* BOARD_H_INCLUDED */
