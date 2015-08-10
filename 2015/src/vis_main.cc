@@ -322,8 +322,8 @@ int main(int argc, char* argv[]) {
         if (board_changed) {
             DisplayBoard(board.get(), &screen_info);
         }
-        if (board->IsGameOver()) {
-            cout << "INFO: GAME OVER!" << endl;
+        if (keep_going && board->IsExhausted()) {
+            cout << "INFO: BOARD EXHAUSTED!" << endl;
             keep_going = false;
         }
     } while (keep_going);

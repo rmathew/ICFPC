@@ -1,7 +1,6 @@
 #include "board.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <cstdio>
 #include <iostream>
 
@@ -18,22 +17,40 @@ using ::std::vector;
 
 Board::Board(BoardConfig* config)
   : config_(config), current_game_(0), current_seed_(0ULL),
-  num_remaining_units_(-1), game_on_(true) {
+  num_remaining_units_(-1), board_exhausted_(false) {
     board_cells_.resize(config_->height);
     for (int row = 0; row < config_->height; ++row) {
         board_cells_[row].resize(config_->width, EMPTY_CELL);
     }
 }
 
+bool Board::StartNewGame() {
+    if (current_game_ >= config_->source_seeds.size()) {
+        board_exhausted_ = true;
+        return false;
+    }
+    for (int row = 0; row < config_->height; ++row) {
+        board_cells_[row].assign(config_->width, EMPTY_CELL);
+    }
+    for (const Location& a_location : config_->filled_cells) {
+        board_cells_[a_location.row][a_location.col] = FULL_CELL;
+    }
+    current_seed_ = config_->source_seeds[current_game_];
+    num_remaining_units_ = config_->source_length;
+    ++current_game_;
+
+    return SpawnNewUnit();
+}
+
 CellState Board::GetCellState(int row, int col) const {
-    if (!IsBoardLocationValid(row, col)) {
+    if (!IsLocationValid(row, col)) {
         return INVALID_CELL;
     }
     return board_cells_[row][col];
 }
 
 bool Board::IsOccupiedByCurrentUnit(int row, int col) const {
-    if (!IsBoardLocationValid(row, col)) {
+    if (!IsLocationValid(row, col)) {
         return false;
     }
     for (const Location& a_location : current_unit_->members) {
@@ -45,7 +62,7 @@ bool Board::IsOccupiedByCurrentUnit(int row, int col) const {
 }
 
 bool Board::IsCurrentUnitPivot(int row, int col) const {
-    if (!IsBoardLocationValid(row, col)) {
+    if (!IsLocationValid(row, col)) {
         return false;
     }
     if (current_unit_->pivot.row == row && current_unit_->pivot.col == col) {
@@ -95,54 +112,37 @@ bool Board::MoveCurrentUnit(MoveCommand cmd) {
 
 namespace {
 
-struct CubicLocation {
-    int x;
-    int y;
-    int z;
-};
-
-void ToCubicLocation(const Location& loc, CubicLocation* cubic_loc) {
-    cubic_loc->x = loc.col - (loc.row - (loc.row & 1)) / 2;
-    cubic_loc->z = loc.row;
-    cubic_loc->y = -cubic_loc->x - cubic_loc->z;
-}
-
-void FromCubicLocation(const CubicLocation& cubic_loc, Location* loc) {
-    loc->col = cubic_loc.x + (cubic_loc.z - (cubic_loc.z & 1)) / 2;
-    loc->row = cubic_loc.z;
-}
-
 void TurnLocation(Location* location, const Location& pivot, TurnCommand cmd) {
-    CubicLocation cubic_pivot;
-    ToCubicLocation(pivot, &cubic_pivot);
+    CubeLocation cube_pivot;
+    ToCubeLocation(pivot, &cube_pivot);
 
-    CubicLocation cubic_location;
-    ToCubicLocation(*location, &cubic_location);
-    cubic_location.x -= cubic_pivot.x;
-    cubic_location.y -= cubic_pivot.y;
-    cubic_location.z -= cubic_pivot.z;
+    CubeLocation cube_location;
+    ToCubeLocation(*location, &cube_location);
+    cube_location.x -= cube_pivot.x;
+    cube_location.y -= cube_pivot.y;
+    cube_location.z -= cube_pivot.z;
 
     int tmp;
     switch (cmd) {
       case TURN_CLOCKWISE:
-        tmp = cubic_location.z;
-        cubic_location.z = -cubic_location.y;
-        cubic_location.y = -cubic_location.x;
-        cubic_location.x = -tmp;
+        tmp = cube_location.z;
+        cube_location.z = -cube_location.y;
+        cube_location.y = -cube_location.x;
+        cube_location.x = -tmp;
         break;
 
       case TURN_COUNTER_CLOCKWISE:
-        tmp = cubic_location.x;
-        cubic_location.x = -cubic_location.y;
-        cubic_location.y = -cubic_location.z;
-        cubic_location.z = -tmp;
+        tmp = cube_location.x;
+        cube_location.x = -cube_location.y;
+        cube_location.y = -cube_location.z;
+        cube_location.z = -tmp;
         break;
     }
 
-    cubic_location.x += cubic_pivot.x;
-    cubic_location.y += cubic_pivot.y;
-    cubic_location.z += cubic_pivot.z;
-    FromCubicLocation(cubic_location, location);
+    cube_location.x += cube_pivot.x;
+    cube_location.y += cube_pivot.y;
+    cube_location.z += cube_pivot.z;
+    FromCubeLocation(cube_location, location);
 }
 
 }  // namespace
@@ -161,21 +161,16 @@ Board* Board::Create(const string& file_name) {
     if (!LoadBoardConfig(file_name, config.get())) {
         return nullptr;
     }
-    unique_ptr<Board> board(new Board(config.release()));
 
-    for (const Location& a_location : board->config_->filled_cells) {
-        board->board_cells_[a_location.row][a_location.col] = FULL_CELL;
-    }
-    board->current_seed_ = board->config_->source_seeds[0];
-    board->num_remaining_units_ = board->config_->source_length;
-    if (!board->SpawnNewUnit()) {
-        cerr << "ERROR: Could not spawn the first Unit." << endl;
+    unique_ptr<Board> board(new Board(config.release()));
+    if (!board->StartNewGame()) {
+        cerr << "ERROR: Could not start the first game." << endl;
         return nullptr;
     }
     return board.release();
 }
 
-bool Board::IsBoardLocationValid(int row, int col) const {
+bool Board::IsLocationValid(int row, int col) const {
     return row >= 0 && row < config_->height &&
       col >= 0 && col < config_->width;
 }
@@ -241,7 +236,7 @@ void Board::ClearRow(int row_idx) {
 
 void Board::LockCurrentUnit() {
     for (const Location& a_location : current_unit_->members) {
-        if (IsBoardLocationValid(a_location.row, a_location.col)) {
+        if (IsLocationValid(a_location.row, a_location.col)) {
             board_cells_[a_location.row][a_location.col] = FULL_CELL;
         }
     }
@@ -254,7 +249,7 @@ void Board::LockCurrentUnit() {
 
 void Board::MarkCurrentUnitCellsVisited() {
     for (const Location& a_location : current_unit_->members) {
-        if (IsBoardLocationValid(a_location.row, a_location.col)) {
+        if (IsLocationValid(a_location.row, a_location.col)) {
             board_cells_[a_location.row][a_location.col] = VISITED_CELL;
         }
     }
@@ -304,7 +299,6 @@ void SetNewUnitLocation(Unit* unit, int board_width) {
 
 bool Board::SpawnNewUnit() {
     if (num_remaining_units_ <= 0) {
-        game_on_ = false;
         return false;
     }
     int new_unit_index =
@@ -316,7 +310,22 @@ bool Board::SpawnNewUnit() {
 
     unique_ptr<Unit> new_unit(new Unit(config_->units[new_unit_index]));
     SetNewUnitLocation(new_unit.get(), config_->width);
-    game_on_ = ReplaceCurrentUnit(new_unit.release(),
+    bool spawn_ok = ReplaceCurrentUnit(new_unit.release(),
       false /* spawn_on_failure */);
-    return game_on_;
+
+    if (!spawn_ok) {
+        return StartNewGame();
+    }
+    return true;
+}
+
+void ToCubeLocation(const Location& loc, CubeLocation* cube_loc) {
+    cube_loc->x = loc.col - (loc.row - (loc.row & 1)) / 2;
+    cube_loc->z = loc.row;
+    cube_loc->y = -cube_loc->x - cube_loc->z;
+}
+
+void FromCubeLocation(const CubeLocation& cube_loc, Location* loc) {
+    loc->col = cube_loc.x + (cube_loc.z - (cube_loc.z & 1)) / 2;
+    loc->row = cube_loc.z;
 }

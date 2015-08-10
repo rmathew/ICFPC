@@ -1,0 +1,15 @@
+Compile the Visualizer:
+
+  make honey
+
+(You need SDL 1.2.x to compile it.)
+
+Run the Visualizer on a board:
+
+  honey -f <board.json>
+
+Keys:
+  LEFT_ARROW / RIGHT_ARROW = Move Unit left/right.
+  UP_ARROW / DOWN_ARROW = Rotate Unit counter-clockwise/clockwise.
+  A / S = Move Unit down left/right.
+  Q / ESCAPE = Quit.

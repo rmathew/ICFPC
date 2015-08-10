@@ -1,6 +1,7 @@
 #ifndef BOARD_H_INCLUDED
 #define BOARD_H_INCLUDED
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -25,9 +26,17 @@ enum TurnCommand {
     TURN_COUNTER_CLOCKWISE,
 };
 
+// Offset-based location used by the task.
 struct Location {
     int row;
     int col;
+};
+
+// "Cube"-based location used by http://www.redblobgames.com/grids/hexagons/.
+struct CubeLocation {
+    int x;
+    int y;
+    int z;
 };
 
 struct Unit {
@@ -55,6 +64,10 @@ class Board {
 
     CellState GetCellState(int row, int col) const;
 
+    bool IsExhausted() {
+        return board_exhausted_;
+    }
+
     bool IsOccupiedByCurrentUnit(int row, int col) const;
 
     bool IsCurrentUnitPivot(int row, int col) const;
@@ -63,14 +76,12 @@ class Board {
 
     bool TurnCurrentUnit(TurnCommand cmd);
 
-    bool IsGameOver() const {
-        return !game_on_;
-    }
-
   private:
     explicit Board(BoardConfig* config);
 
-    bool IsBoardLocationValid(int row, int col) const;
+    bool StartNewGame();
+
+    bool IsLocationValid(int row, int col) const;
 
     bool IsNewUnitLocationValid(const Unit* new_unit) const;
 
@@ -91,11 +102,15 @@ class Board {
     ::std::unique_ptr<BoardConfig> config_;
 
     ::std::vector<::std::vector<CellState>> board_cells_;
-    int current_game_;
+    size_t current_game_;
     ::std::unique_ptr<Unit> current_unit_;
     uint64_t current_seed_;
     int num_remaining_units_;
-    bool game_on_;
+    bool board_exhausted_;
 };
+
+void ToCubeLocation(const Location& loc, CubeLocation* cube_loc);
+
+void FromCubeLocation(const CubeLocation& cube_loc, Location* loc);
 
 #endif /* BOARD_H_INCLUDED */
