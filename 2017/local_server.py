@@ -10,9 +10,9 @@ import lambda_world
 
 class PunterHandler(asyncore.dispatcher_with_send):
 
-    def __init__(self, world, sock):
+    def __init__(self, world_state, sock):
         asyncore.dispatcher_with_send.__init__(self, sock=sock)
-        self.world = world
+        self.world_state = world_state
 
     def read(self, buffer_size):
         return self.recv(buffer_size)
@@ -28,22 +28,21 @@ class PunterHandler(asyncore.dispatcher_with_send):
         if "me" in msg_obj:
             punter_name = msg_obj["me"]
             utils.eprint("INFO: Punter calls itself '%s'." % punter_name)
-            punter_id = len(self.world.punters)
-            self.world.add_punter(punter_name)
+            punter_id = self.world_state.add_punter()
             utils.encode_obj(self, {"you": punter_name})
             utils.encode_obj(self, {"punter": punter_id,
-                "punters": len(self.world.punters),
-                "map": self.world.world_map.to_dict()})
+                "punters": self.world_state.num_punters,
+                "map": self.world_state.world_map.to_dict()})
         elif "ready" in msg_obj:
             pass
         else:
             utils.eprint("WARNING: Ignored message.")
 
-class MapServer(asyncore.dispatcher):
+class WorldServer(asyncore.dispatcher):
 
-    def __init__(self, world):
+    def __init__(self, world_state):
         asyncore.dispatcher.__init__(self)
-        self.world = world
+        self.world_state = world_state
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.set_reuse_addr()
         self.bind(("localhost", 12345))
@@ -54,7 +53,7 @@ class MapServer(asyncore.dispatcher):
         if pair is not None:
             sock, addr = pair
             utils.eprint("INFO: Punter connected.")
-            handler = PunterHandler(self.world, sock)
+            handler = PunterHandler(self.world_state, sock)
 
 def run():
     if len(sys.argv) != 2:
@@ -64,13 +63,18 @@ def run():
     world_map_file = sys.argv[1]
     with open(world_map_file, "r") as f:
         world_map_str = f.read()
-    world_map = lambda_world.WorldMap(json.loads(world_map_str))
+    world_state_dict = {}
+    world_state_dict["map"] = json.loads(world_map_str)
     utils.eprint("INFO: World map loaded from '%s'." % world_map_file)
+    world_state_dict["punters"] = 0
+    world_state_dict["claims"] = []
+    world_state = lambda_world.WorldState(world_state_dict)
+    world_map = world_state.world_map
     utils.eprint("INFO: World map has %d sites, %d rivers and %d mines." %
-        (len(world_map.sites), len(world_map.rivers), len(world_map.mines)))
-    world = lambda_world.World(world_map)
+        (world_map.get_num_sites(), world_map.get_num_rivers(),
+            world_map.get_num_mines()))
 
-    server = MapServer(world)
+    server = WorldServer(world_state)
     asyncore.loop()
 
 if __name__ == "__main__":
