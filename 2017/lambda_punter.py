@@ -2,8 +2,6 @@ import sys
 import utils
 import lambda_world
 
-INVALID_SITE_ID = -1
-
 class LambdaPunter():
 
     def __init__(self, name):
@@ -12,7 +10,7 @@ class LambdaPunter():
         self.world_state = None
 
     def get_river_to_claim(self):
-        return (INVALID_SITE_ID, INVALID_SITE_ID)
+        return lambda_world.INVALID_RIVER
 
     def shake_hands(self):
         self.send_msg({"me": self.punter_name})
@@ -36,19 +34,19 @@ class LambdaPunter():
     def make_a_move(self, cmd_dict):
         self.update_state(cmd_dict["state"], cmd_dict["move"]["moves"])
         claimed_river = self.get_river_to_claim()
-        utils.eprint("INFO: My move is %s." % self.claim_to_str(self.punter_id,
-            claimed_river[0], claimed_river[1]))
+        utils.eprint("INFO: My move is %s." %
+            self.claim_to_str(self.punter_id, claimed_river))
         response_dict = {"state": self.get_state_dict()}
-        if claimed_river[0] == INVALID_SITE_ID:
+        if claimed_river == lambda_world.INVALID_RIVER:
             response_dict["pass"] = {"punter": self.punter_id}
         else:
             response_dict["claim"] = {"punter": self.punter_id,
-                "source": claimed_river[0], "target": claimed_river[1]}
+                "source": claimed_river.source, "target": claimed_river.target}
         self.send_msg(response_dict)
 
     def wrap_it_up(self, cmd_dict):
-        stop_dict = cmd_dict["stop"]
-        scores_list = stop_dict["scores"]
+        self.update_state(cmd_dict["state"], cmd_dict["stop"]["moves"])
+        scores_list = cmd_dict["stop"]["scores"]
         my_score = -1
         for a_punters_score_dict in scores_list:
             if a_punters_score_dict["punter"] == self.punter_id:
@@ -70,15 +68,18 @@ class LambdaPunter():
             utils.eprint(cmd_dict)
 
     def send_msg(self, obj):
+        # utils.eprint("DEBUG: send_msg\n%s" % str(obj))
         utils.encode_obj(sys.stdout, obj)
 
     def recv_msg(self):
-        return utils.decode_obj(sys.stdin)
+        recv_obj = utils.decode_obj(sys.stdin)
+        # utils.eprint("DEBUG: recv_msg\n%s" % str(recv_obj))
+        return recv_obj
 
-    def claim_to_str(self, punter_id, source, target):
-        if source == INVALID_SITE_ID:
+    def claim_to_str(self, punter_id, river):
+        if river == lambda_world.INVALID_RIVER:
             return "%d=P" % punter_id
-        return "%d=C(%d,%d)" % (punter_id, source, target)
+        return "%d=C%s" % (punter_id, str(river))
 
     def update_state(self, state_dict, prev_moves_list):
         self.punter_id = int(state_dict["punter"])
@@ -87,17 +88,18 @@ class LambdaPunter():
         for a_move_dict in prev_moves_list:
             if "pass" in a_move_dict:
                 prev_moves_str += self.claim_to_str(
-                    int(a_move_dict["pass"]["punter"]), INVALID_SITE_ID,
-                    INVALID_SITE_ID)
+                    int(a_move_dict["pass"]["punter"]),
+                    lambda_world.INVALID_RIVER)
             else:
                 claim_dict = a_move_dict["claim"]
                 punter_id = int(claim_dict["punter"])
                 source = int(claim_dict["source"])
                 target = int(claim_dict["target"])
-                move_str = self.claim_to_str(punter_id, source, target)
-                claim_status = self.world_state.add_punter_claim(
-                    punter_id, source, target)
-                if not claim_status:
+                claimed_river = lambda_world.River(source, target)
+                move_str = self.claim_to_str(punter_id, claimed_river)
+                is_valid_claim = self.world_state.add_punter_claim(
+                    punter_id, claimed_river)
+                if not is_valid_claim:
                     utils.eprint("WARNING: Got invalid move %s." % move_str)
                 prev_moves_str += move_str
             prev_moves_str += " "

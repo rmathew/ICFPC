@@ -1,4 +1,5 @@
 UNKNOWN_PUNTER_ID = -1
+INVALID_SITE_ID = -1
 
 class Site():
     def __init__(self):
@@ -6,11 +7,28 @@ class Site():
         self.y = -1
         self.neighbors_list = []
 
+class River():
+    def __init__(self, source, target):
+        self.source = min(source, target)
+        self.target = max(source, target)
+
+    def __str__(self):
+        return "(%d,%d)" % (self.source, self.target)
+
+    def __hash__(self):
+        return hash(self.source * 1024 + self.target)
+
+    def __eq__(self, rhs):
+        return (isinstance(rhs, River) and self.source == rhs.source and
+            self.target == rhs.target)
+
+INVALID_RIVER = River(INVALID_SITE_ID, INVALID_SITE_ID)
+
 class WorldMap():
 
     def __init__(self, world_map_dict):
         self.sites_dict = {}
-        self.mines_list = []
+        self.mines_set = {}
         if "sites" in world_map_dict:
             for a_site_dict in world_map_dict["sites"]:
                 the_site = Site()
@@ -26,8 +44,10 @@ class WorldMap():
                 tgt_site = self.sites_dict[tgt_site_id]
                 tgt_site.neighbors_list.append(src_site_id)
         if "mines" in world_map_dict:
+            mines_list = []
             for a_mine_id in world_map_dict["mines"]:
-                self.mines_list.append(int(a_mine_id))
+                mines_list.append(int(a_mine_id))
+            self.mines_set = frozenset(mines_list)
 
     def get_num_sites(self):
         return len(self.sites_dict)
@@ -36,12 +56,11 @@ class WorldMap():
         num_rivers = 0
         for a_site_id, a_site in self.sites_dict.items():
             for a_neighbor_id in a_site.neighbors_list:
-                if a_site_id < a_neighbor_id:
-                    num_rivers += 1
-        return num_rivers
+                num_rivers += 1
+        return num_rivers / 2
 
     def get_num_mines(self):
-        return len(self.mines_list)
+        return len(self.mines_set)
 
     def to_dict(self):
         return_dict = {}
@@ -57,7 +76,7 @@ class WorldMap():
         return_dict["sites"] = sites_list
         return_dict["rivers"] = rivers_list
         mines_list = []
-        for a_mine_id in self.mines_list:
+        for a_mine_id in self.mines_set:
             mines_list.append(a_mine_id)
         return_dict["mines"] = mines_list
         return return_dict
@@ -70,8 +89,9 @@ class WorldState():
         self.claims_dict = {}
         claims_list = world_dict["claims"]
         for a_claim_dict in claims_list:
-            self.add_punter_claim(int(a_claim_dict["punter"]),
+            river = River(
                 int(a_claim_dict["source"]), int(a_claim_dict["target"]))
+            self.add_punter_claim(int(a_claim_dict["punter"]), river)
 
     def to_dict(self):
         return_dict = {}
@@ -79,8 +99,8 @@ class WorldState():
         return_dict["punters"] = int(self.num_punters)
         claims_list = []
         for a_river, a_punter_id in self.claims_dict.items():
-            claims_list.append({"punter": a_punter_id, "source": a_river[0],
-                "target": a_river[1]})
+            claims_list.append({"punter": a_punter_id,
+                "source": a_river.source, "target": a_river.target})
         return_dict["claims"] = claims_list
         return return_dict
 
@@ -88,13 +108,25 @@ class WorldState():
         self.num_punters += 1
         return self.num_punters - 1
 
-    def get_claiming_punter(self, source, target):
-        river = (min(source, target), max(source, target))
+    def get_claiming_punter(self, river):
         self.claims_dict.get(river, UNKNOWN_PUNTER_ID)
 
-    def add_punter_claim(self, punter_id, source, target):
-        river = (min(source, target), max(source, target))
+    def add_punter_claim(self, punter_id, river):
+        if river == INVALID_RIVER:
+            return False
         if river in self.claims_dict:
             return False
         self.claims_dict[river] = punter_id
         return True
+
+    def calculate_score(self, punter_id):
+        # TODO(rmathew): Implement this properly.
+        score = 0
+        for a_river, a_punter_id in self.claims_dict.items():
+            if a_punter_id != punter_id:
+                continue
+            if a_river.source in self.mines_set:
+                score += 1
+            if a_river.target in self.mines_set:
+                score += 1
+        return score
