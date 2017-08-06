@@ -1,4 +1,4 @@
-# Simple make-file to help run punters and local servers for ICFPC 2017.
+# Simple Makefile to help run Punters and local servers for ICFPC 2017.
 PUNTER_ID = 1
 REMOTE_SERVER = punter.inf.ed.ac.uk
 REMOTE_PORT = 9998

@@ -1,0 +1,3 @@
+#!/bin/sh
+MYDIR=`dirname $0`
+python2 "$MYDIR/src/punter_main.py"

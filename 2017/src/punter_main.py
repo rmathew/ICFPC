@@ -19,7 +19,7 @@ def _make_std_streams_block():
 def run():
     _make_std_streams_block()
 
-    punter_strategy = "lurk"
+    punter_strategy = "naive"
     if len(sys.argv) > 1:
         punter_strategy = sys.argv[1]
 
