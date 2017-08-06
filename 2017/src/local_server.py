@@ -1,15 +1,30 @@
 #!/usr/bin/env python2
 from __future__ import print_function
 
+import atexit
 import json
+import lambda_world
+import sdl2
+import sdl2.ext
 import socket
 import sys
+import time
 import utils
-import lambda_world
+
+INTER_TURN_SLEEP_SECS = 0.5
+
+def _close_socket(sock):
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except:
+        pass
+    finally:
+        sock.close()
 
 class PunterComm():
     def __init__(self, sock, world_state):
         sock.setblocking(1)
+        atexit.register(_close_socket, sock)
         self.sock = sock
         self.world_state = world_state
         self.punter_id = lambda_world.UNKNOWN_PUNTER_ID
@@ -57,7 +72,6 @@ class PunterComm():
     def wrap_it_up(self, stop_cmd_dict):
         utils.encode_obj(self, stop_cmd_dict)
         utils.eprint("INFO: Disconnecting Punter %d." % self.punter_id)
-        self.sock.close()
 
     def get_score(self):
         score = self.world_state.calculate_score(self.punter_id)
@@ -72,6 +86,111 @@ class PunterComm():
 
     def flush(self):
         pass
+
+class Visualizer():
+
+    WINDOW_WIDTH = 800
+    WINDOW_HEIGHT = 600
+    GUTTER_SIZE = 50
+
+    def __init__(self, world_state):
+        sdl2.ext.init()
+        atexit.register(sdl2.ext.quit)
+        self.window = sdl2.ext.Window("Lambda Punter",
+            size=(Visualizer.WINDOW_WIDTH, Visualizer.WINDOW_HEIGHT))
+        self.window.show()
+        self.world_state = world_state
+        self.unclaimed_river_color = sdl2.ext.Color(0, 0, 255)
+        self.claimed_river_colors = [sdl2.ext.Color(255, 255, 0),
+            sdl2.ext.Color(0, 255, 0)]
+        self.mine_image = sdl2.ext.load_image("./images/mine16x16.png")
+        self.site_image = sdl2.ext.load_image("./images/site16x16.png")
+        self._calculate_transforms()
+        self.update_world_map()
+
+    def check_keep_going(self):
+        keep_going = True
+        events = sdl2.ext.get_events()
+        for event in events:
+            if event.type == sdl2.SDL_QUIT:
+                keep_going = False
+                break
+            elif event.type == sdl2.SDL_KEYDOWN:
+                if event.key.keysym.sym == sdl2.SDLK_ESCAPE:
+                    keep_going = False
+                    break
+        if not keep_going:
+            sys.exit(0)
+        self.update_world_map()
+
+    def update_world_map(self):
+        window_surface = self.window.get_surface()
+        sdl2.ext.fill(window_surface, 0)
+        claims_dict = self.world_state.claims_dict
+        sites_dict = self.world_state.world_map.sites_dict
+        for a_site_id, a_site in sites_dict.items():
+            site_x, site_y = self._locate_site_on_screen(a_site)
+            for a_neighbor_id in a_site.neighbors_list:
+                if a_neighbor_id < a_site_id:
+                    continue
+                river = lambda_world.River(a_site_id, a_neighbor_id)
+                if river in claims_dict:
+                    continue
+                neighbor_x, neighbor_y = self._locate_site_on_screen(
+                    sites_dict[a_neighbor_id])
+                self._draw_river(window_surface, self.unclaimed_river_color,
+                    site_x, site_y, neighbor_x, neighbor_y)
+        for a_river, a_punter_id in claims_dict.items():
+            src_site = sites_dict[a_river.source]
+            src_x, src_y = self._locate_site_on_screen(src_site)
+            tgt_site = sites_dict[a_river.target]
+            tgt_x, tgt_y = self._locate_site_on_screen(tgt_site)
+            color_idx = a_punter_id % len(self.claimed_river_colors)
+            self._draw_river(window_surface,
+                self.claimed_river_colors[color_idx], src_x, src_y, tgt_x,
+                tgt_y)
+        mines_set = self.world_state.world_map.mines_set
+        for a_site_id, a_site in sites_dict.items():
+            if a_site_id in mines_set:
+                img_surface = self.mine_image
+            else:
+                img_surface = self.site_image
+            site_x, site_y = self._locate_site_on_screen(a_site)
+            dst_rect = sdl2.SDL_Rect(site_x - 8, site_y - 8, 0, 0)
+            sdl2.SDL_BlitSurface(img_surface, None, window_surface, dst_rect)
+
+        self.window.refresh()
+
+    def _draw_river(self, surface, color, src_x, src_y, dst_x, dst_y):
+        sdl2.ext.line(surface, color, (src_x, src_y, dst_x, dst_y))
+
+    def _calculate_transforms(self):
+        min_world_x = sys.float_info.max
+        min_world_y = sys.float_info.max
+        max_world_x = -sys.float_info.min
+        max_world_y = -sys.float_info.min
+        for a_site in self.world_state.world_map.sites_dict.values():
+            min_world_x = min(a_site.x, min_world_x)
+            min_world_y = min(a_site.y, min_world_y)
+            max_world_x = max(a_site.x, max_world_x)
+            max_world_y = max(a_site.y, max_world_y)
+        world_width = max_world_x - min_world_x
+        world_height = max_world_y - min_world_y
+        screen_width = Visualizer.WINDOW_WIDTH - 2 * Visualizer.GUTTER_SIZE
+        screen_height = Visualizer.WINDOW_HEIGHT - 2 * Visualizer.GUTTER_SIZE
+        world_to_screen_scale_x = float(screen_width) / world_width
+        world_to_screen_scale_y = float(screen_height) / world_height
+        self.world_centroid_x = (min_world_x + max_world_x) / 2.
+        self.world_centroid_y = (min_world_y + max_world_y) / 2.
+        self.world_to_screen_scale = min(world_to_screen_scale_x,
+            world_to_screen_scale_y)
+
+    def _locate_site_on_screen(self, site):
+        new_x = (site.x - self.world_centroid_x) * self.world_to_screen_scale
+        new_y = (site.y - self.world_centroid_y) * self.world_to_screen_scale
+        new_x += Visualizer.WINDOW_WIDTH / 2
+        new_y += Visualizer.WINDOW_HEIGHT / 2
+        return (int(new_x), int(new_y))
 
 def wait_for_punter(server_socket, world_state):
     client_socket, _ = server_socket.accept()
@@ -101,21 +220,25 @@ def get_scores_list(punter_comms_list):
             "score": a_punter_comm.get_score()})
     return scores_list
 
-def play_game(punter_comms_list, world_state):
+def play_game(punter_comms_list, world_state, viz):
     for a_punter_comm in punter_comms_list:
         a_punter_comm.set_up()
 
+    viz.check_keep_going()
     for turn_num in range(world_state.world_map.get_num_rivers()):
         move_cmd_dict = {"move": {"moves":
             get_prev_moves_list(punter_comms_list)}}
-        for a_punter_comm in punter_comms_list:
-            a_punter_comm.make_a_move(turn_num, move_cmd_dict)
+        punter_with_turn = turn_num % len(punter_comms_list)
+        punter_comms_list[punter_with_turn].make_a_move(turn_num, move_cmd_dict)
+        viz.check_keep_going()
+        time.sleep(INTER_TURN_SLEEP_SECS)
 
     stop_cmd_dict = {"stop": {
         "moves": get_prev_moves_list(punter_comms_list),
         "scores": get_scores_list(punter_comms_list)}}
     for a_punter_comm in punter_comms_list:
         a_punter_comm.wrap_it_up(stop_cmd_dict)
+    viz.check_keep_going()
 
 def run():
     if len(sys.argv) != 2:
@@ -136,19 +259,26 @@ def run():
         (world_map.get_num_sites(), world_map.get_num_rivers(),
             world_map.get_num_mines()))
 
+    viz = Visualizer(world_state)
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    atexit.register(_close_socket, server_socket)
     server_socket.bind(("localhost", 12345))
     server_socket.listen(2)
 
     utils.eprint("INFO: Waiting for two Punters.")
     punter1_comm = wait_for_punter(server_socket, world_state)
     utils.eprint("INFO: Punter1 connected. Waiting for Punter2.")
+    viz.check_keep_going()
     punter2_comm = wait_for_punter(server_socket, world_state)
     utils.eprint("INFO: Punter2 connected. Starting the game.")
-    server_socket.close()
+    viz.check_keep_going()
 
-    play_game([punter1_comm, punter2_comm], world_state)
+    play_game([punter1_comm, punter2_comm], world_state, viz)
+
+    while True:
+        time.sleep(INTER_TURN_SLEEP_SECS)
+        viz.check_keep_going()
 
 if __name__ == "__main__":
     run()

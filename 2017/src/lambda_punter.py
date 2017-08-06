@@ -48,10 +48,15 @@ class LambdaPunter():
         self.update_state(cmd_dict["state"], cmd_dict["stop"]["moves"])
         scores_list = cmd_dict["stop"]["scores"]
         my_score = -1
+        final_scores_str = ""
         for a_punters_score_dict in scores_list:
-            if a_punters_score_dict["punter"] == self.punter_id:
-                my_score = a_punters_score_dict["score"]
-                break
+            a_punter_id = int(a_punters_score_dict["punter"])
+            a_score = int(a_punters_score_dict["score"])
+            if a_punter_id == self.punter_id:
+                my_score = a_score
+                final_scores_str += "*"
+            final_scores_str += "%d=%d " % (a_punter_id, a_score)
+        utils.eprint("INFO: Final scores:\n  %s" % final_scores_str)
         utils.eprint("INFO: The game has ended and my score is %d." % my_score)
 
     def punt(self):
@@ -87,21 +92,22 @@ class LambdaPunter():
         prev_moves_str = ""
         for a_move_dict in prev_moves_list:
             if "pass" in a_move_dict:
-                prev_moves_str += self.claim_to_str(
-                    int(a_move_dict["pass"]["punter"]),
-                    lambda_world.INVALID_RIVER)
+                punter_id = int(a_move_dict["pass"]["punter"])
+                claimed_river = lambda_world.INVALID_RIVER
             else:
                 claim_dict = a_move_dict["claim"]
                 punter_id = int(claim_dict["punter"])
                 source = int(claim_dict["source"])
                 target = int(claim_dict["target"])
                 claimed_river = lambda_world.River(source, target)
-                move_str = self.claim_to_str(punter_id, claimed_river)
                 is_valid_claim = self.world_state.add_punter_claim(
                     punter_id, claimed_river)
                 if not is_valid_claim:
+                    claimed_river = lambda_world.INVALID_RIVER
                     utils.eprint("WARNING: Got invalid move %s." % move_str)
-                prev_moves_str += move_str
+            if punter_id == self.punter_id:
+                prev_moves_str += "*"
+            prev_moves_str += self.claim_to_str(punter_id, claimed_river)
             prev_moves_str += " "
         utils.eprint("INFO: Previous moves:\n  %s" % prev_moves_str)
 
