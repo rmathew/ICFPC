@@ -113,3 +113,26 @@ class NaivePunter(LambdaPunter):
 
     def __init__(self, name):
         LambdaPunter.__init__(self, name)
+
+    def get_river_to_claim(self):
+        world_map = self.world_state.world_map
+        for a_mine_id in world_map.mines_set:
+            river = self.pick_first_free_river(a_mine_id,
+                world_map.sites_dict[a_mine_id])
+            if river != lambda_world.INVALID_RIVER:
+                return river
+        for a_site_id, a_site in world_map.sites_dict.items():
+            if a_site_id in world_map.mines_set:
+                continue
+            river = self.pick_first_free_river(a_site_id, a_site)
+            if river != lambda_world.INVALID_RIVER:
+                return river
+        return lambda_world.INVALID_RIVER
+
+    def pick_first_free_river(self, site_id, site):
+        for a_neighbor_id in site.neighbors_list:
+            river = lambda_world.River(site_id, a_neighbor_id)
+            claimant = self.world_state.get_claiming_punter(river)
+            if claimant == lambda_world.UNKNOWN_PUNTER_ID:
+                return river
+        return lambda_world.INVALID_RIVER

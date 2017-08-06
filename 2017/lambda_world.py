@@ -109,7 +109,7 @@ class WorldState():
         return self.num_punters - 1
 
     def get_claiming_punter(self, river):
-        self.claims_dict.get(river, UNKNOWN_PUNTER_ID)
+        return self.claims_dict.get(river, UNKNOWN_PUNTER_ID)
 
     def add_punter_claim(self, punter_id, river):
         if river == INVALID_RIVER:
@@ -122,11 +122,12 @@ class WorldState():
     def calculate_score(self, punter_id):
         # TODO(rmathew): Implement this properly.
         score = 0
+        mines_set = self.world_map.mines_set
         for a_river, a_punter_id in self.claims_dict.items():
             if a_punter_id != punter_id:
                 continue
-            if a_river.source in self.mines_set:
+            if a_river.source in mines_set:
                 score += 1
-            if a_river.target in self.mines_set:
+            if a_river.target in mines_set:
                 score += 1
         return score
