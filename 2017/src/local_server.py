@@ -150,19 +150,42 @@ class Visualizer():
                 self.claimed_river_colors[color_idx], src_x, src_y, tgt_x,
                 tgt_y)
         mines_set = self.world_state.world_map.mines_set
+        mines_sites_list = []
+        have_too_many_sites = len(sites_dict) > 128
         for a_site_id, a_site in sites_dict.items():
             if a_site_id in mines_set:
-                img_surface = self.mine_image
-            else:
-                img_surface = self.site_image
-            site_x, site_y = self._locate_site_on_screen(a_site)
-            dst_rect = sdl2.SDL_Rect(site_x - 8, site_y - 8, 0, 0)
-            sdl2.SDL_BlitSurface(img_surface, None, window_surface, dst_rect)
+                mines_sites_list.append(a_site)
+                continue
+            elif have_too_many_sites:
+                continue
+            self._draw_site(window_surface, False, a_site)
+        for a_mine in mines_sites_list:
+            self._draw_site(window_surface, True, a_mine)
 
         self.window.refresh()
 
+    def _draw_site(self, surface, is_a_mine, site):
+        if is_a_mine:
+            img_surface = self.mine_image
+        else:
+            img_surface = self.site_image
+        site_x, site_y = self._locate_site_on_screen(site)
+        dst_rect = sdl2.SDL_Rect(site_x - 8, site_y - 8, 0, 0)
+        sdl2.SDL_BlitSurface(img_surface, None, surface, dst_rect)
+
     def _draw_river(self, surface, color, src_x, src_y, dst_x, dst_y):
         sdl2.ext.line(surface, color, (src_x, src_y, dst_x, dst_y))
+        # if self.world_state.world_map.get_num_rivers() > 128:
+        #     return
+        # trans_x = float(dst_x - src_x)
+        # trans_y = float(dst_y - src_y)
+        # length = math.sqrt(trans_x * trans_x + trans_y * trans_y)
+        # del_x = int(math.ceil(trans_y / length))
+        # del_y = int(math.ceil(trans_x / length))
+        # sdl2.ext.line(surface, color,
+        #     (src_x - del_x, src_y + del_y, dst_x - del_x, dst_y + del_y))
+        # sdl2.ext.line(surface, color,
+        #     (src_x + del_x, src_y - del_y, dst_x + del_x, dst_y - del_y))
 
     def _calculate_transforms(self):
         min_world_x = sys.float_info.max

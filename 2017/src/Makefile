@@ -4,7 +4,7 @@ REMOTE_SERVER = punter.inf.ed.ac.uk
 REMOTE_PORT = 9998
 LOCAL_SERVER = localhost
 LOCAL_PORT = 12345
-WORLD_MAP = ./maps/sample.json
+WORLD_MAP = sample
 LAMDUCT = /extra1/lambda-duct/lamduct
 LAMDUCT_LOG_LEVEL = 2
 DEL = rm -f
@@ -27,7 +27,7 @@ local_punter:
 	    --log-level=$(LAMDUCT_LOG_LEVEL) ./punter$(PUNTER_ID)
 
 local_server:
-	python2 ./local_server.py $(WORLD_MAP)
+	python2 ./local_server.py ./maps/$(WORLD_MAP).json
 
 clean:
 	$(DEL) $(PYC_FILES)
