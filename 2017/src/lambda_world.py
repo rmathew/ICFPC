@@ -1,3 +1,6 @@
+import sys
+import utils
+
 UNKNOWN_PUNTER_ID = -1
 INVALID_SITE_ID = -1
 
@@ -87,11 +90,14 @@ class WorldState():
         self.world_map = WorldMap(world_dict["map"])
         self.num_punters = int(world_dict["punters"])
         self.claims_dict = {}
-        claims_list = world_dict["claims"]
-        for a_claim_dict in claims_list:
+        for a_claim_dict in world_dict["claims"]:
+            punter_id = int(a_claim_dict["punter"])
             river = River(
                 int(a_claim_dict["source"]), int(a_claim_dict["target"]))
-            self.add_punter_claim(int(a_claim_dict["punter"]), river)
+            is_valid_claim = self.add_punter_claim(punter_id, river)
+            if not is_valid_claim:
+              utils.eprint("ERROR: world_dict has an invalid claim %d=%s" %
+                  (punter_id, river))
 
     def to_dict(self):
         return_dict = {}
@@ -120,14 +126,71 @@ class WorldState():
         return True
 
     def calculate_score(self, punter_id):
-        # TODO(rmathew): Implement this properly.
+        accessible_edges_dict = self._get_accessible_edges(punter_id)
         score = 0
-        mines_set = self.world_map.mines_set
-        for a_river, a_punter_id in self.claims_dict.items():
-            if a_punter_id != punter_id:
-                continue
-            if a_river.source in mines_set:
-                score += 1
-            if a_river.target in mines_set:
-                score += 1
+        for a_mine_id in self.world_map.mines_set:
+            score += self._get_score_for_mine(a_mine_id, accessible_edges_dict)
         return score
+
+    def _get_accessible_edges(self, punter_id):
+        nodes_to_edges_dict = {}
+        for a_site_id, a_site in self.world_map.sites_dict.items():
+            site_edges_list = []
+            for a_neighbor_id in a_site.neighbors_list:
+                a_river = River(a_site_id, a_neighbor_id)
+                if self.get_claiming_punter(a_river) == punter_id:
+                    site_edges_list.append(a_neighbor_id)
+            nodes_to_edges_dict[a_site_id] = site_edges_list
+        return nodes_to_edges_dict
+
+    def _get_score_for_mine(self, a_mine_id, accessible_edges_dict):
+        if len(accessible_edges_dict[a_mine_id]) == 0:
+            return 0
+
+        # Use Dijkstra's algorithm to get the shortest paths from the mine to
+        # all the other sites _in the original graph_.
+        shortest_dist_dict = self._get_shortest_distances(a_mine_id)
+
+        # Find all the sites that can be visited from the mine _in the
+        # accessible graph_.
+        accessible_sites_set = set()
+        self._fill_accessible_sites(a_mine_id, accessible_edges_dict,
+            accessible_sites_set)
+
+        score = 0
+        for a_site in accessible_sites_set:
+            shortest_dist = shortest_dist_dict[a_site]
+            score += shortest_dist * shortest_dist
+        return score
+
+    def _get_shortest_distances(self, a_mine_id):
+        orig_sites_dict = self.world_map.sites_dict
+        MAX_POSSIBLE_DIST = sys.maxsize
+        seen_set = set()
+        dist_dict = {a_mine_id: 0}
+        curr_site_id = a_mine_id
+        dist_to_curr_site = 0
+        while not curr_site_id in seen_set:
+            seen_set.add(curr_site_id)
+            for an_edge in orig_sites_dict[curr_site_id].neighbors_list:
+                new_dist_to_edge = dist_to_curr_site + 1
+                curr_dist_to_edge = dist_dict.get(an_edge, MAX_POSSIBLE_DIST)
+                if curr_dist_to_edge > new_dist_to_edge:
+                    dist_dict[an_edge] = new_dist_to_edge
+
+            dist_to_curr_site = MAX_POSSIBLE_DIST
+            for a_site_id in orig_sites_dict.keys():
+                if a_site_id in seen_set:
+                    continue
+                dist_to_site = dist_dict.get(a_site_id, MAX_POSSIBLE_DIST)
+                if dist_to_curr_site > dist_to_site:
+                    dist_to_curr_site = dist_to_site
+                    curr_site_id = a_site_id
+        return dist_dict
+
+    def _fill_accessible_sites(self, src, accessible_edges, accessible_sites):
+        accessible_sites.add(src)
+        for tgt in accessible_edges[src]:
+            if tgt in accessible_sites:
+                continue
+            self._fill_accessible_sites(tgt, accessible_edges, accessible_sites)

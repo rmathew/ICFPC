@@ -29,13 +29,25 @@ class LambdaPunter():
         world_state_dict["punters"] = num_punters
         world_state_dict["claims"] = []
         self.world_state = lambda_world.WorldState(world_state_dict)
+        world_map = self.world_state.world_map
+        utils.eprint("INFO: World map has %d sites, %d rivers and %d mines." %
+            (world_map.get_num_sites(), world_map.get_num_rivers(),
+                world_map.get_num_mines()))
         self.send_msg({"ready": self.punter_id, "state": self.get_state_dict()})
 
     def make_a_move(self, cmd_dict):
         self.update_state(cmd_dict["state"], cmd_dict["move"]["moves"])
+
         claimed_river = self.get_river_to_claim()
+        if claimed_river != lambda_world.INVALID_RIVER:
+            is_valid_claim = self.world_state.add_punter_claim(
+                self.punter_id, claimed_river)
+            if not is_valid_claim:
+                claimed_river = lambda_world.INVALID_RIVER
+                utils.eprint("ERROR: Made invalid move %s." % move_str)
         utils.eprint("INFO: My move is %s." %
             self.claim_to_str(self.punter_id, claimed_river))
+
         response_dict = {"state": self.get_state_dict()}
         if claimed_river == lambda_world.INVALID_RIVER:
             response_dict["pass"] = {"punter": self.punter_id}
@@ -46,7 +58,12 @@ class LambdaPunter():
 
     def wrap_it_up(self, cmd_dict):
         self.update_state(cmd_dict["state"], cmd_dict["stop"]["moves"])
+
         scores_list = cmd_dict["stop"]["scores"]
+        max_score = 0
+        for a_punters_score_dict in scores_list:
+            a_score = int(a_punters_score_dict["score"])
+            max_score = max(max_score, a_score)
         my_score = -1
         final_scores_str = ""
         for a_punters_score_dict in scores_list:
@@ -55,7 +72,11 @@ class LambdaPunter():
             if a_punter_id == self.punter_id:
                 my_score = a_score
                 final_scores_str += "*"
-            final_scores_str += "%d=%d " % (a_punter_id, a_score)
+            final_scores_str += "%d=%d" % (a_punter_id, a_score)
+            if a_score == max_score:
+                final_scores_str += "^ "
+            else:
+                final_scores_str += " "
         utils.eprint("INFO: Final scores:\n  %s" % final_scores_str)
         utils.eprint("INFO: The game has ended and my score is %d." % my_score)
 
@@ -100,11 +121,12 @@ class LambdaPunter():
                 source = int(claim_dict["source"])
                 target = int(claim_dict["target"])
                 claimed_river = lambda_world.River(source, target)
-                is_valid_claim = self.world_state.add_punter_claim(
-                    punter_id, claimed_river)
-                if not is_valid_claim:
-                    claimed_river = lambda_world.INVALID_RIVER
-                    utils.eprint("WARNING: Got invalid move %s." % move_str)
+                if punter_id != self.punter_id:
+                    is_valid_claim = self.world_state.add_punter_claim(
+                        punter_id, claimed_river)
+                    if not is_valid_claim:
+                        claimed_river = lambda_world.INVALID_RIVER
+                        utils.eprint("WARNING: Got invalid move %s." % move_str)
             if punter_id == self.punter_id:
                 prev_moves_str += "*"
             prev_moves_str += self.claim_to_str(punter_id, claimed_river)
