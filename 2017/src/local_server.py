@@ -11,7 +11,7 @@ import sys
 import time
 import utils
 
-INTER_TURN_SLEEP_SECS = 0.5
+INTER_TURN_SLEEP_SECS = 0.3
 
 def _close_socket(sock):
     try:

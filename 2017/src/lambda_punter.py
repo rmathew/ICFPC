@@ -1,3 +1,4 @@
+import cPickle
 import lambda_world
 import random
 import sys
@@ -110,7 +111,8 @@ class LambdaPunter():
 
     def update_state(self, state_dict, prev_moves_list):
         self.punter_id = int(state_dict["punter"])
-        self.world_state = lambda_world.WorldState(state_dict["world_state"])
+        self.world_state = cPickle.loads(
+            state_dict["world_state"].encode("ascii"))
         prev_moves_str = ""
         for a_move_dict in prev_moves_list:
             if "pass" in a_move_dict:
@@ -136,7 +138,7 @@ class LambdaPunter():
 
     def get_state_dict(self):
         return {"punter": int(self.punter_id),
-            "world_state": self.world_state.to_dict()}
+            "world_state": cPickle.dumps(self.world_state, 0)}
 
 class NaivePunter(LambdaPunter):
 
