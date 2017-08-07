@@ -1,1 +1,7 @@
-Ranjit Mathew <rmathew@gmail.com>
+An embarrassingly-naive Lambda Punter for the ICFP contest 2017 by Ranjit
+Mathew <rmathew@gmail.com>.
+
+NOTE: The "punter" at the top-level is just a shell-script that invokes the
+real Python program in "src/punter_main.py" using a Python 2.17+ interpreter.
+It thus needs access to the file-system to read the Python script and its
+dependent scripts.
