@@ -8,9 +8,9 @@ def eprint(*args, **kwargs):
     sys.stderr.flush()
 
 def encode_obj(stream, obj):
-    msg = json.dumps(obj, ensure_ascii=True, separators=(',', ':'))
-    stream.write("%d:" % len(msg))
-    stream.write(msg)
+    message = json.dumps(obj, ensure_ascii=True, separators=(',', ':'))
+    stream.write("%d:" % len(message))
+    stream.write(message)
     stream.flush()
 
 def decode_obj(stream):
@@ -20,10 +20,9 @@ def decode_obj(stream):
         num_expected_str += char
         char = stream.read(1)
     num_expected = int(num_expected_str)
-    num_received = 0
-    msg = ""
-    while num_received < num_expected:
-        msg += stream.read(num_expected - num_received)
-        num_received += len(msg)
-    obj = json.loads(msg)
-    return obj
+    message = ""
+    while num_expected > 0:
+        fragment = stream.read(num_expected)
+        message += fragment
+        num_expected -= len(fragment)
+    return json.loads(message)

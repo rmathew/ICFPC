@@ -4,8 +4,10 @@ from __future__ import print_function
 import atexit
 import json
 import lambda_world
+import math
 import sdl2
 import sdl2.ext
+import sdl2.sdlgfx
 import socket
 import sys
 import time
@@ -92,20 +94,22 @@ class Visualizer():
     WINDOW_WIDTH = 800
     WINDOW_HEIGHT = 600
     GUTTER_SIZE = 50
+    IMAGES = sdl2.ext.Resources(__file__, "images")
 
     def __init__(self, world_state):
+        self.world_state = world_state
         sdl2.ext.init()
         atexit.register(sdl2.ext.quit)
         self.window = sdl2.ext.Window("Lambda Punter",
             size=(Visualizer.WINDOW_WIDTH, Visualizer.WINDOW_HEIGHT))
         self.window.show()
-        self.world_state = world_state
-        self.unclaimed_river_color = sdl2.ext.Color(0, 0, 255)
-        self.claimed_river_colors = [sdl2.ext.Color(255, 255, 0),
-            sdl2.ext.Color(0, 255, 0)]
-        self.mine_image = sdl2.ext.load_image("./images/mine16x16.png")
-        self.site_image = sdl2.ext.load_image("./images/site16x16.png")
-        self._calculate_transforms()
+        self.renderer=sdl2.ext.Renderer(self.window)
+        self.background_color = sdl2.ext.Color(0x00, 0x00, 0x00, 0x00)
+        self.unclaimed_river_color = (0x00, 0x00, 0xFF, 0xFF)
+        self.claimed_river_colors = [(0xFF, 0x00, 0xFF, 0xFF),
+            (0x00, 0xFF, 0xFF, 0xFF)]
+        self._set_river_width()
+        self._create_sprites()
         self.update_world_map()
 
     def check_keep_going(self):
@@ -124,10 +128,10 @@ class Visualizer():
         self.update_world_map()
 
     def update_world_map(self):
-        window_surface = self.window.get_surface()
-        sdl2.ext.fill(window_surface, 0)
+        self.renderer.clear(self.background_color)
         claims_dict = self.world_state.claims_dict
         sites_dict = self.world_state.world_map.sites_dict
+        uc_r, uc_g, uc_b, uc_a = self.unclaimed_river_color
         for a_site_id, a_site in sites_dict.items():
             site_x, site_y = self._locate_site_on_screen(a_site)
             for a_neighbor_id in a_site.neighbors_list:
@@ -138,54 +142,55 @@ class Visualizer():
                     continue
                 neighbor_x, neighbor_y = self._locate_site_on_screen(
                     sites_dict[a_neighbor_id])
-                self._draw_river(window_surface, self.unclaimed_river_color,
-                    site_x, site_y, neighbor_x, neighbor_y)
+                sdl2.sdlgfx.thickLineRGBA(self.renderer.sdlrenderer, site_x,
+                    site_y, neighbor_x, neighbor_y, self.river_width, uc_r,
+                    uc_g, uc_b, uc_a)
         for a_river, a_punter_id in claims_dict.items():
             src_site = sites_dict[a_river.source]
             src_x, src_y = self._locate_site_on_screen(src_site)
             tgt_site = sites_dict[a_river.target]
             tgt_x, tgt_y = self._locate_site_on_screen(tgt_site)
             color_idx = a_punter_id % len(self.claimed_river_colors)
-            self._draw_river(window_surface,
-                self.claimed_river_colors[color_idx], src_x, src_y, tgt_x,
-                tgt_y)
+            c_r, c_g, c_b, c_a = self.claimed_river_colors[color_idx]
+            sdl2.sdlgfx.thickLineRGBA(self.renderer.sdlrenderer, src_x, src_y,
+                tgt_x, tgt_y, self.river_width, c_r, c_g, c_b, c_a)
+
+        self.sprite_renderer.render(self.site_sprites)
+        self.renderer.present()
+
+    def _set_river_width(self):
+        num_rivers = self.world_state.world_map.get_num_rivers()
+        self.river_width = 10 - int(math.log(num_rivers, 2.))
+        if self.river_width <= 0:
+            self.river_width = 1
+
+    def _create_sprites(self):
+        self._calculate_transforms()
+        sites_dict = self.world_state.world_map.sites_dict
         mines_set = self.world_state.world_map.mines_set
-        mines_sites_list = []
-        have_too_many_sites = len(sites_dict) > 128
+        self.site_sprites = []
+        sprite_factory = sdl2.ext.SpriteFactory(sdl2.ext.TEXTURE,
+            renderer=self.renderer)
+        have_too_many_sites = len(sites_dict) > 64
         for a_site_id, a_site in sites_dict.items():
-            if a_site_id in mines_set:
-                mines_sites_list.append(a_site)
+            is_a_mine = a_site_id in mines_set
+            if not is_a_mine and have_too_many_sites:
                 continue
-            elif have_too_many_sites:
-                continue
-            self._draw_site(window_surface, False, a_site)
-        for a_mine in mines_sites_list:
-            self._draw_site(window_surface, True, a_mine)
-
-        self.window.refresh()
-
-    def _draw_site(self, surface, is_a_mine, site):
-        if is_a_mine:
-            img_surface = self.mine_image
-        else:
-            img_surface = self.site_image
-        site_x, site_y = self._locate_site_on_screen(site)
-        dst_rect = sdl2.SDL_Rect(site_x - 8, site_y - 8, 0, 0)
-        sdl2.SDL_BlitSurface(img_surface, None, surface, dst_rect)
-
-    def _draw_river(self, surface, color, src_x, src_y, dst_x, dst_y):
-        sdl2.ext.line(surface, color, (src_x, src_y, dst_x, dst_y))
-        # if self.world_state.world_map.get_num_rivers() > 128:
-        #     return
-        # trans_x = float(dst_x - src_x)
-        # trans_y = float(dst_y - src_y)
-        # length = math.sqrt(trans_x * trans_x + trans_y * trans_y)
-        # del_x = int(math.ceil(trans_y / length))
-        # del_y = int(math.ceil(trans_x / length))
-        # sdl2.ext.line(surface, color,
-        #     (src_x - del_x, src_y + del_y, dst_x - del_x, dst_y + del_y))
-        # sdl2.ext.line(surface, color,
-        #     (src_x + del_x, src_y - del_y, dst_x + del_x, dst_y - del_y))
+            if is_a_mine:
+                sprite_image = "mine16x16.png"
+                sprite_depth = 2
+            else:
+                sprite_image = "site16x16.png"
+                sprite_depth = 1
+            sprite = sprite_factory.from_image(Visualizer.IMAGES.get_path(
+                sprite_image))
+            sprite.depth = sprite_depth
+            s_w, s_h = sprite.size
+            site_x, site_y = self._locate_site_on_screen(a_site)
+            sprite.position = site_x - s_w / 2, site_y - s_h / 2
+            self.site_sprites.append(sprite)
+        self.sprite_renderer = sprite_factory.create_sprite_render_system(
+            self.window)
 
     def _calculate_transforms(self):
         min_world_x = sys.float_info.max

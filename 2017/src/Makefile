@@ -6,7 +6,7 @@ LOCAL_SERVER = localhost
 LOCAL_PORT = 12345
 WORLD_MAP = sample
 LAMDUCT = /extra1/lambda-duct/lamduct
-LAMDUCT_LOG_LEVEL = 2
+LAMDUCT_LOG_LEVEL = 1
 DEL = rm -f
 
 PYC_FILES = $(patsubst %.py,%.pyc,$(wildcard *.py))
