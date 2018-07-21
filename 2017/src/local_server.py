@@ -104,10 +104,12 @@ class Visualizer():
             size=(Visualizer.WINDOW_WIDTH, Visualizer.WINDOW_HEIGHT))
         self.window.show()
         self.renderer=sdl2.ext.Renderer(self.window)
-        self.background_color = sdl2.ext.Color(0x00, 0x00, 0x00, 0x00)
-        self.unclaimed_river_color = (0x00, 0x00, 0xFF, 0xFF)
-        self.claimed_river_colors = [(0xFF, 0x00, 0xFF, 0xFF),
-            (0x00, 0xFF, 0xFF, 0xFF)]
+        # Solarized Dark colors.
+        self.background_color = sdl2.ext.Color(0x00, 0x2B, 0x36, 0xFF)  # base03
+        self.unclaimed_river_color = (0x83, 0x94, 0x96, 0xFF)  # base0
+        self.claimed_river_colors = [
+            (0x26, 0x8B, 0xD2, 0xFF),  # blue
+            (0xB5, 0x89, 0x00, 0xFF)]  # yellow
         self._set_river_width()
         self._create_sprites()
         self.update_world_map()
