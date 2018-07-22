@@ -53,6 +53,24 @@ func (r *Renderer) waitForEvent() {
 	}
 }
 
+func (r *Renderer) renderBox(vi, vj, fi, fj []int16) {
+	frontFaceColor := sdl.Color{255, 255, 255, 255}
+	fi[0], fi[1], fi[2], fi[3] = vi[0], vi[1], vi[6], vi[5]
+	fj[0], fj[1], fj[2], fj[3] = vj[0], vj[1], vj[6], vj[5]
+	gfx.FilledPolygonColor(r.renderer, fi, fj, frontFaceColor)
+
+	upFaceColor := sdl.Color{208, 208, 208, 255}
+	fi[0], fi[1], fi[2], fi[3] = vi[1], vi[2], vi[3], vi[6]
+	fj[0], fj[1], fj[2], fj[3] = vj[1], vj[2], vj[3], vj[6]
+	gfx.FilledPolygonColor(r.renderer, fi, fj, upFaceColor)
+
+	sideFaceColor := sdl.Color{192, 192, 192, 255}
+	fi[0], fi[1], fi[2], fi[3] = vi[5], vi[6], vi[3], vi[4]
+	fj[0], fj[1], fj[2], fj[3] = vj[5], vj[6], vj[3], vj[4]
+
+	gfx.FilledPolygonColor(r.renderer, fi, fj, sideFaceColor)
+}
+
 func (r *Renderer) renderMatrix(m *Matrix) {
 	r.renderer.SetDrawColor(0, 0, 0, 255)
 	r.renderer.Clear()
@@ -62,9 +80,9 @@ func (r *Renderer) renderMatrix(m *Matrix) {
 	res := m.Resolution()
 	tileWidth := int(math.Floor(maxMatSize / (1.0 + sinCos45) / float64(res)))
 	tileDelta := int(math.Floor(float64(tileWidth) * sinCos45))
-	matSize := res * (tileWidth + tileDelta)
-	iOff := (winWidth - matSize) / 2
-	jOff := (winHeight - matSize) / 2
+	matRenderSize := res * (tileWidth + tileDelta)
+	iOff := (winWidth - matRenderSize) / 2
+	jOff := (winHeight - matRenderSize) / 2
 
 	var bi, bj = make([]int16, 4), make([]int16, 4)
 	bi[0], bj[0] = int16(iOff), int16(winHeight-jOff)
@@ -73,45 +91,42 @@ func (r *Renderer) renderMatrix(m *Matrix) {
 	bi[3], bj[3] = bi[2]-int16(res*tileDelta), bj[2]+int16(res*tileDelta)
 	gfx.FilledPolygonColor(r.renderer, bi, bj, sdl.Color{64, 64, 64, 255})
 
-	frontFaceColor := sdl.Color{255, 255, 255, 255}
-	upFaceColor := sdl.Color{208, 208, 208, 255}
-	sideFaceColor := sdl.Color{192, 192, 192, 255}
 	var vi, vj = make([]int16, 7), make([]int16, 7)
 	var fi, fj = make([]int16, 4), make([]int16, 4)
 	for x := 0; x < res; x++ {
 		for y := 0; y < res; y++ {
+			prevFull := false
 			for z := res - 1; z >= 0; z-- {
-				full, err := m.IsFull(x, y, z)
+				currFull, err := m.IsFull(x, y, z)
 				Check(err)
-				if !full {
+				if !currFull {
+					if prevFull {
+						r.renderBox(vi, vj, fi, fj)
+					}
+					prevFull = false
 					continue
 				}
 				vi[0] = int16(iOff + x*tileWidth + z*tileDelta)
 				vj[0] = int16(winHeight - (jOff + y*tileWidth + z*tileDelta))
 				vi[1] = vi[0]
 				vj[1] = vj[0] - int16(tileWidth)
-				vi[2] = vi[1] + int16(tileDelta)
-				vj[2] = vj[1] - int16(tileDelta)
-				vi[3] = vi[2] + int16(tileWidth)
-				vj[3] = vj[2]
-				vi[4] = vi[3]
-				vj[4] = vj[3] + int16(tileWidth)
-				vi[5] = vi[4] - int16(tileDelta)
-				vj[5] = vj[4] + int16(tileDelta)
+				if !prevFull {
+					vi[2] = vi[1] + int16(tileDelta)
+					vj[2] = vj[1] - int16(tileDelta)
+					vi[3] = vi[2] + int16(tileWidth)
+					vj[3] = vj[2]
+					vi[4] = vi[3]
+					vj[4] = vj[3] + int16(tileWidth)
+				}
+				vi[5] = vi[0] + int16(tileWidth)
+				vj[5] = vj[0]
 				vi[6] = vi[5]
 				vj[6] = vj[5] - int16(tileWidth)
 
-				fi[0], fi[1], fi[2], fi[3] = vi[0], vi[1], vi[6], vi[5]
-				fj[0], fj[1], fj[2], fj[3] = vj[0], vj[1], vj[6], vj[5]
-				gfx.FilledPolygonColor(r.renderer, fi, fj, frontFaceColor)
-
-				fi[0], fi[1], fi[2], fi[3] = vi[1], vi[2], vi[3], vi[6]
-				fj[0], fj[1], fj[2], fj[3] = vj[1], vj[2], vj[3], vj[6]
-				gfx.FilledPolygonColor(r.renderer, fi, fj, upFaceColor)
-
-				fi[0], fi[1], fi[2], fi[3] = vi[5], vi[6], vi[3], vi[4]
-				fj[0], fj[1], fj[2], fj[3] = vj[5], vj[6], vj[3], vj[4]
-				gfx.FilledPolygonColor(r.renderer, fi, fj, sideFaceColor)
+				prevFull = true
+			}
+			if prevFull {
+				r.renderBox(vi, vj, fi, fj)
 			}
 		}
 	}

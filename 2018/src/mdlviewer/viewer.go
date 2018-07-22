@@ -15,7 +15,7 @@ func main() {
 	mat := new(nmms.Matrix)
 	nmms.Check(mat.ReadFromFile(os.Args[1]))
 	res := mat.Resolution()
-	fmt.Printf("Resolution=%d\n", res)
+	fmt.Printf("Resolution=%d; ", res)
 	numFilled := 0
 	for x := 0; x < res; x++ {
 		for y := 0; y < res; y++ {
