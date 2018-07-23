@@ -18,7 +18,7 @@ func (n *NmmSystem) ExecuteStep() error {
 		return nil
 	}
 	if numBots > 1 {
-		return fmt.Errorf("Cannot handle more than one Nanobot right now")
+		return fmt.Errorf("cannot handle more than one Nanobot right now")
 	}
 	cmds, err := n.Trc.TakeCommands(numBots)
 	if err != nil {

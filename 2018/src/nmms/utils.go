@@ -7,6 +7,20 @@ import (
 	"os"
 )
 
+func iMin(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
+}
+
+func iMax(a, b int) int {
+	if a >= b {
+		return a
+	}
+	return b
+}
+
 // ExitWithErrorMsg prints the given error-message to stderr and then exits with
 // an error-code.
 func ExitWithErrorMsg(errMsg string) {

@@ -12,7 +12,7 @@ type Command interface {
 
 func DecodeNextCommand(encCmds []byte) (Command, int, error) {
 	if len(encCmds) <= 0 {
-		return nil, 0, fmt.Errorf("Premature end of Command-stream")
+		return nil, 0, fmt.Errorf("premature end of Command-stream")
 	}
 	var cmd Command
 	firstByte := encCmds[0]
@@ -46,7 +46,7 @@ func DecodeNextCommand(encCmds []byte) (Command, int, error) {
 		offset, err := cmd.decode(encCmds)
 		return cmd, offset, err
 	}
-	return nil, 0, fmt.Errorf("Unknown Command-encoding %08b in stream",
+	return nil, 0, fmt.Errorf("unknown Command-encoding %08b in stream",
 		firstByte)
 }
 
@@ -54,7 +54,7 @@ type HaltCmd bool
 
 func (h *HaltCmd) Execute(n *NmmSystem, bIdx int) error {
 	if len(n.Bots) != 1 || bIdx != 0 {
-		return fmt.Errorf("Halt requires a single Nanobot to be left")
+		return fmt.Errorf("halt requires a single Nanobot to be left")
 	}
 	n.Bots = []Nanobot{}
 	return nil
@@ -120,14 +120,14 @@ func toLld(axis byte, integer int) (Coordinate, error) {
 	case 0x3:
 		coord.Z = integer - 15
 	default:
-		return coord, fmt.Errorf("Corrupt axis-encoding for SMove")
+		return coord, fmt.Errorf("corrupt axis-encoding for SMove")
 	}
 	return coord, nil
 }
 
 func (s *SMoveCmd) decode(encCmds []byte) (int, error) {
 	if len(encCmds) < 2 {
-		return 0, fmt.Errorf("Premature end of Command-stream for SMove")
+		return 0, fmt.Errorf("premature end of Command-stream for SMove")
 	}
 	axis := byte((encCmds[0] & 0x30) >> 4)
 	integer := int(encCmds[1] & 0x1F)
@@ -153,7 +153,7 @@ func toSld(axis byte, integer int) (Coordinate, error) {
 	case 0x3:
 		coord.Z = integer - 5
 	default:
-		return coord, fmt.Errorf("Corrupt axis-encoding for LMove")
+		return coord, fmt.Errorf("corrupt axis-encoding for LMove")
 	}
 	return coord, nil
 }
@@ -165,12 +165,12 @@ type LMoveCmd struct {
 
 func (l *LMoveCmd) Execute(n *NmmSystem, bIdx int) error {
 	// TODO: Implement this.
-	return fmt.Errorf("Unimplemented %v", l)
+	return fmt.Errorf("unimplemented %v", l)
 }
 
 func (l *LMoveCmd) decode(encCmds []byte) (int, error) {
 	if len(encCmds) < 2 {
-		return 0, fmt.Errorf("Premature end of Command-stream for LMove")
+		return 0, fmt.Errorf("premature end of Command-stream for LMove")
 	}
 	axis := byte((encCmds[0] & 0x30) >> 4)
 	integer := int(encCmds[1] & 0x0F)
@@ -214,7 +214,7 @@ func toNd(integer int) (Coordinate, error) {
 	integer %= 3
 	coord.Z = integer - 1
 	if !isValidNd(coord) {
-		return coord, fmt.Errorf("Malformed near coordinate difference %v",
+		return coord, fmt.Errorf("malformed near coordinate difference %v",
 			coord)
 	}
 	return coord, nil
@@ -226,7 +226,7 @@ type FusionPCmd struct {
 
 func (f *FusionPCmd) Execute(n *NmmSystem, bIdx int) error {
 	// TODO: Implement this.
-	return fmt.Errorf("Unimplemented %v", f)
+	return fmt.Errorf("unimplemented %v", f)
 }
 
 func (f *FusionPCmd) decode(encCmds []byte) (int, error) {
@@ -249,7 +249,7 @@ type FusionSCmd struct {
 
 func (f *FusionSCmd) Execute(n *NmmSystem, bIdx int) error {
 	// TODO: Implement this.
-	return fmt.Errorf("Unimplemented %v", f)
+	return fmt.Errorf("unimplemented %v", f)
 }
 
 func (f *FusionSCmd) decode(encCmds []byte) (int, error) {
@@ -273,12 +273,12 @@ type FissionCmd struct {
 
 func (f *FissionCmd) Execute(n *NmmSystem, bIdx int) error {
 	// TODO: Implement this.
-	return fmt.Errorf("Unimplemented %v", f)
+	return fmt.Errorf("unimplemented %v", f)
 }
 
 func (f *FissionCmd) decode(encCmds []byte) (int, error) {
 	if len(encCmds) < 2 {
-		return 0, fmt.Errorf("Premature end of Command-stream for Fission")
+		return 0, fmt.Errorf("premature end of Command-stream for Fission")
 	}
 	integer := int((encCmds[0] & 0xF8) >> 3)
 	var err error
@@ -324,7 +324,7 @@ type VoidCmd struct {
 
 func (v *VoidCmd) Execute(n *NmmSystem, bIdx int) error {
 	// TODO: Implement this.
-	return fmt.Errorf("Unimplemented %v", v)
+	return fmt.Errorf("unimplemented %v", v)
 }
 
 func (v *VoidCmd) decode(encCmds []byte) (int, error) {
@@ -348,12 +348,12 @@ type GFillCmd struct {
 
 func (g *GFillCmd) Execute(n *NmmSystem, bIdx int) error {
 	// TODO: Implement this.
-	return fmt.Errorf("Unimplemented %v", g)
+	return fmt.Errorf("unimplemented %v", g)
 }
 
 func (g *GFillCmd) decode(encCmds []byte) (int, error) {
 	if len(encCmds) < 4 {
-		return 0, fmt.Errorf("Premature end of Command-stream for GFill")
+		return 0, fmt.Errorf("premature end of Command-stream for GFill")
 	}
 	integer := int((encCmds[0] & 0xF8) >> 3)
 	var err error
@@ -378,12 +378,12 @@ type GVoidCmd struct {
 
 func (g *GVoidCmd) Execute(n *NmmSystem, bIdx int) error {
 	// TODO: Implement this.
-	return fmt.Errorf("Unimplemented %v", g)
+	return fmt.Errorf("unimplemented %v", g)
 }
 
 func (g *GVoidCmd) decode(encCmds []byte) (int, error) {
 	if len(encCmds) < 4 {
-		return 0, fmt.Errorf("Premature end of Command-stream for GVoid")
+		return 0, fmt.Errorf("premature end of Command-stream for GVoid")
 	}
 	integer := int((encCmds[0] & 0xF8) >> 3)
 	var err error
