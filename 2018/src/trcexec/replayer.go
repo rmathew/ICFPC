@@ -1,3 +1,4 @@
+// Usage: go run replayer.go /path/to/file.nbt /path/to/file.mdl
 package main
 
 import (
@@ -31,5 +32,6 @@ func main() {
 			break
 		}
 	}
+	fmt.Printf("Final Energy: %d\n", nSys.Energy)
 	viewer.Quit()
 }

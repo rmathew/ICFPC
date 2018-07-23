@@ -50,11 +50,20 @@ func DecodeNextCommand(encCmds []byte) (Command, int, error) {
 		firstByte)
 }
 
+/* Halt */
+
 type HaltCmd bool
 
 func (h *HaltCmd) Execute(n *NmmSystem, bIdx int) error {
 	if len(n.Bots) != 1 || bIdx != 0 {
-		return fmt.Errorf("halt requires a single Nanobot to be left")
+		return fmt.Errorf("Halt requires a single Nanobot to be left")
+	}
+	c := n.Bots[0].Pos
+	if c.X != 0 || c.Y != 0 || c.Z != 0 {
+		return fmt.Errorf("Halt requires the Nanobot to be at the origin")
+	}
+	if n.HighHarmonics {
+		return fmt.Errorf("Halt requires the harmonics to be Low")
 	}
 	n.Bots = []Nanobot{}
 	return nil
@@ -67,6 +76,8 @@ func (h *HaltCmd) decode(encCmds []byte) (int, error) {
 func (h *HaltCmd) String() string {
 	return "Halt"
 }
+
+/* Wait */
 
 type WaitCmd bool
 
@@ -81,6 +92,8 @@ func (w *WaitCmd) decode(encCmds []byte) (int, error) {
 func (w *WaitCmd) String() string {
 	return "Wait"
 }
+
+/* Flip */
 
 type FlipCmd bool
 
@@ -101,16 +114,23 @@ func (f *FlipCmd) String() string {
 	return "Flip"
 }
 
+func mLen(c *Coordinate) int {
+	return iAbs(c.X) + iAbs(c.Y) + iAbs(c.Z)
+}
+
+/* SMove */
+
 type SMoveCmd struct {
-	lld Coordinate
+	LLD Coordinate
 }
 
 func (s *SMoveCmd) Execute(n *NmmSystem, bIdx int) error {
-	n.Bots[bIdx].Pos = n.Bots[bIdx].Pos.Add(&s.lld)
+	n.Bots[bIdx].Pos = n.Bots[bIdx].Pos.Add(&s.LLD)
+	n.Energy += 2 * mLen(&s.LLD)
 	return nil
 }
 
-func toLld(axis byte, integer int) (Coordinate, error) {
+func toLLD(axis byte, integer int) (Coordinate, error) {
 	coord := Coordinate{}
 	switch axis {
 	case 0x1:
@@ -132,7 +152,7 @@ func (s *SMoveCmd) decode(encCmds []byte) (int, error) {
 	axis := byte((encCmds[0] & 0x30) >> 4)
 	integer := int(encCmds[1] & 0x1F)
 	var err error
-	s.lld, err = toLld(axis, integer)
+	s.LLD, err = toLLD(axis, integer)
 	if err != nil {
 		return 0, err
 	}
@@ -140,10 +160,12 @@ func (s *SMoveCmd) decode(encCmds []byte) (int, error) {
 }
 
 func (s *SMoveCmd) String() string {
-	return fmt.Sprintf("SMove %v", &s.lld)
+	return fmt.Sprintf("SMove %v", &s.LLD)
 }
 
-func toSld(axis byte, integer int) (Coordinate, error) {
+/* LMove */
+
+func toSLD(axis byte, integer int) (Coordinate, error) {
 	coord := Coordinate{}
 	switch axis {
 	case 0x1:
@@ -159,12 +181,14 @@ func toSld(axis byte, integer int) (Coordinate, error) {
 }
 
 type LMoveCmd struct {
-	sld1 Coordinate
-	sld2 Coordinate
+	SLD1 Coordinate
+	SLD2 Coordinate
 }
 
 func (l *LMoveCmd) Execute(n *NmmSystem, bIdx int) error {
-	// TODO: Implement this.
+	n.Bots[bIdx].Pos = n.Bots[bIdx].Pos.Add(&l.SLD1)
+	n.Bots[bIdx].Pos = n.Bots[bIdx].Pos.Add(&l.SLD2)
+	n.Energy += 2 * (mLen(&l.SLD1) + 2 + mLen(&l.SLD2))
 	return fmt.Errorf("unimplemented %v", l)
 }
 
@@ -175,13 +199,13 @@ func (l *LMoveCmd) decode(encCmds []byte) (int, error) {
 	axis := byte((encCmds[0] & 0x30) >> 4)
 	integer := int(encCmds[1] & 0x0F)
 	var err error
-	l.sld1, err = toSld(axis, integer)
+	l.SLD1, err = toSLD(axis, integer)
 	if err != nil {
 		return 0, err
 	}
 	axis = byte((encCmds[0] & 0xD0) >> 6)
 	integer = int((encCmds[1] & 0xF0) >> 4)
-	l.sld2, err = toSld(axis, integer)
+	l.SLD2, err = toSLD(axis, integer)
 	if err != nil {
 		return 0, err
 	}
@@ -189,10 +213,12 @@ func (l *LMoveCmd) decode(encCmds []byte) (int, error) {
 }
 
 func (l *LMoveCmd) String() string {
-	return fmt.Sprintf("LMove %v %v", &l.sld1, &l.sld2)
+	return fmt.Sprintf("LMove %v %v", &l.SLD1, &l.SLD2)
 }
 
-func isValidNd(c Coordinate) bool {
+/* FusionP */
+
+func isValidND(c Coordinate) bool {
 	numSet := 0
 	if c.X == -1 || c.X == +1 {
 		numSet++
@@ -206,14 +232,14 @@ func isValidNd(c Coordinate) bool {
 	return numSet > 0 && numSet < 3
 }
 
-func toNd(integer int) (Coordinate, error) {
+func toND(integer int) (Coordinate, error) {
 	coord := Coordinate{}
 	coord.X = integer/9 - 1
 	integer %= 9
 	coord.Y = integer/3 - 1
 	integer %= 3
 	coord.Z = integer - 1
-	if !isValidNd(coord) {
+	if !isValidND(coord) {
 		return coord, fmt.Errorf("malformed near coordinate difference %v",
 			coord)
 	}
@@ -221,7 +247,7 @@ func toNd(integer int) (Coordinate, error) {
 }
 
 type FusionPCmd struct {
-	nd Coordinate
+	ND Coordinate
 }
 
 func (f *FusionPCmd) Execute(n *NmmSystem, bIdx int) error {
@@ -232,7 +258,7 @@ func (f *FusionPCmd) Execute(n *NmmSystem, bIdx int) error {
 func (f *FusionPCmd) decode(encCmds []byte) (int, error) {
 	integer := int((encCmds[0] & 0xF8) >> 3)
 	var err error
-	f.nd, err = toNd(integer)
+	f.ND, err = toND(integer)
 	if err != nil {
 		return 0, err
 	}
@@ -240,11 +266,13 @@ func (f *FusionPCmd) decode(encCmds []byte) (int, error) {
 }
 
 func (f *FusionPCmd) String() string {
-	return fmt.Sprintf("FusionP %v", &f.nd)
+	return fmt.Sprintf("FusionP %v", &f.ND)
 }
 
+/* FusionS */
+
 type FusionSCmd struct {
-	nd Coordinate
+	ND Coordinate
 }
 
 func (f *FusionSCmd) Execute(n *NmmSystem, bIdx int) error {
@@ -255,7 +283,7 @@ func (f *FusionSCmd) Execute(n *NmmSystem, bIdx int) error {
 func (f *FusionSCmd) decode(encCmds []byte) (int, error) {
 	integer := int((encCmds[0] & 0xF8) >> 3)
 	var err error
-	f.nd, err = toNd(integer)
+	f.ND, err = toND(integer)
 	if err != nil {
 		return 0, err
 	}
@@ -263,12 +291,14 @@ func (f *FusionSCmd) decode(encCmds []byte) (int, error) {
 }
 
 func (f *FusionSCmd) String() string {
-	return fmt.Sprintf("FusionS %v", &f.nd)
+	return fmt.Sprintf("FusionS %v", &f.ND)
 }
 
+/* Fission */
+
 type FissionCmd struct {
-	nd Coordinate
-	m  int
+	ND Coordinate
+	M  int
 }
 
 func (f *FissionCmd) Execute(n *NmmSystem, bIdx int) error {
@@ -282,24 +312,26 @@ func (f *FissionCmd) decode(encCmds []byte) (int, error) {
 	}
 	integer := int((encCmds[0] & 0xF8) >> 3)
 	var err error
-	f.nd, err = toNd(integer)
+	f.ND, err = toND(integer)
 	if err != nil {
 		return 0, err
 	}
-	f.m = int(encCmds[1])
+	f.M = int(encCmds[1])
 	return 2, nil
 }
 
 func (f *FissionCmd) String() string {
-	return fmt.Sprintf("Fission %v %d", &f.nd, f.m)
+	return fmt.Sprintf("Fission %v %d", &f.ND, f.M)
 }
 
+/* Fill */
+
 type FillCmd struct {
-	nd Coordinate
+	ND Coordinate
 }
 
 func (f *FillCmd) Execute(n *NmmSystem, bIdx int) error {
-	c := n.Bots[bIdx].Pos.Add(&f.nd)
+	c := n.Bots[bIdx].Pos.Add(&f.ND)
 	n.Mat.SetFull(c.X, c.Y, c.Z)
 	return nil
 }
@@ -307,7 +339,7 @@ func (f *FillCmd) Execute(n *NmmSystem, bIdx int) error {
 func (f *FillCmd) decode(encCmds []byte) (int, error) {
 	integer := int((encCmds[0] & 0xF8) >> 3)
 	var err error
-	f.nd, err = toNd(integer)
+	f.ND, err = toND(integer)
 	if err != nil {
 		return 0, err
 	}
@@ -315,11 +347,11 @@ func (f *FillCmd) decode(encCmds []byte) (int, error) {
 }
 
 func (f *FillCmd) String() string {
-	return fmt.Sprintf("Fill %v", &f.nd)
+	return fmt.Sprintf("Fill %v", &f.ND)
 }
 
 type VoidCmd struct {
-	nd Coordinate
+	ND Coordinate
 }
 
 func (v *VoidCmd) Execute(n *NmmSystem, bIdx int) error {
@@ -330,7 +362,7 @@ func (v *VoidCmd) Execute(n *NmmSystem, bIdx int) error {
 func (v *VoidCmd) decode(encCmds []byte) (int, error) {
 	integer := int((encCmds[0] & 0xF8) >> 3)
 	var err error
-	v.nd, err = toNd(integer)
+	v.ND, err = toND(integer)
 	if err != nil {
 		return 0, err
 	}
@@ -338,12 +370,14 @@ func (v *VoidCmd) decode(encCmds []byte) (int, error) {
 }
 
 func (v *VoidCmd) String() string {
-	return fmt.Sprintf("Void %v", &v.nd)
+	return fmt.Sprintf("Void %v", &v.ND)
 }
 
+/* GFill */
+
 type GFillCmd struct {
-	nd Coordinate
-	fd Coordinate
+	ND Coordinate
+	FD Coordinate
 }
 
 func (g *GFillCmd) Execute(n *NmmSystem, bIdx int) error {
@@ -357,23 +391,25 @@ func (g *GFillCmd) decode(encCmds []byte) (int, error) {
 	}
 	integer := int((encCmds[0] & 0xF8) >> 3)
 	var err error
-	g.nd, err = toNd(integer)
+	g.ND, err = toND(integer)
 	if err != nil {
 		return 0, err
 	}
-	g.fd.X = int(encCmds[1])
-	g.fd.Y = int(encCmds[2])
-	g.fd.Z = int(encCmds[3])
+	g.FD.X = int(encCmds[1])
+	g.FD.Y = int(encCmds[2])
+	g.FD.Z = int(encCmds[3])
 	return 4, nil
 }
 
 func (g *GFillCmd) String() string {
-	return fmt.Sprintf("GFill %v %v", &g.nd, &g.fd)
+	return fmt.Sprintf("GFill %v %v", &g.ND, &g.FD)
 }
 
+/* GVoid */
+
 type GVoidCmd struct {
-	nd Coordinate
-	fd Coordinate
+	ND Coordinate
+	FD Coordinate
 }
 
 func (g *GVoidCmd) Execute(n *NmmSystem, bIdx int) error {
@@ -387,16 +423,16 @@ func (g *GVoidCmd) decode(encCmds []byte) (int, error) {
 	}
 	integer := int((encCmds[0] & 0xF8) >> 3)
 	var err error
-	g.nd, err = toNd(integer)
+	g.ND, err = toND(integer)
 	if err != nil {
 		return 0, err
 	}
-	g.fd.X = int(encCmds[1])
-	g.fd.Y = int(encCmds[2])
-	g.fd.Z = int(encCmds[3])
+	g.FD.X = int(encCmds[1])
+	g.FD.Y = int(encCmds[2])
+	g.FD.Z = int(encCmds[3])
 	return 4, nil
 }
 
 func (g *GVoidCmd) String() string {
-	return fmt.Sprintf("GVoid %v %v", &g.nd, &g.fd)
+	return fmt.Sprintf("GVoid %v %v", &g.ND, &g.FD)
 }

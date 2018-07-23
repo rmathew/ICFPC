@@ -1,3 +1,4 @@
+// Usage: go run viewer.go /path/to/file.mdl
 package main
 
 import (

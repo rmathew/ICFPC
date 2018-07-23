@@ -7,6 +7,13 @@ import (
 	"os"
 )
 
+func iAbs(a int) int {
+	if a < 0 {
+		return -a
+	}
+	return a
+}
+
 func iMin(a, b int) int {
 	if a <= b {
 		return a

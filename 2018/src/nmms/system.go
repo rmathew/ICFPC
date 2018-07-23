@@ -27,8 +27,20 @@ func (n *NmmSystem) ExecuteStep() error {
 	if len(cmds) == 0 {
 		return nil
 	}
+
+	energyCost := 0
+	resCubed := n.Mat.Resolution() * n.Mat.Resolution() * n.Mat.Resolution()
+	if n.HighHarmonics {
+		energyCost += 30 * resCubed
+	} else {
+		energyCost += 3 * resCubed
+	}
+	energyCost += 20 * len(n.Bots)
+
 	if err = cmds[0].Execute(n, 0); err != nil {
 		return err
 	}
+	n.Energy += energyCost
+
 	return nil
 }

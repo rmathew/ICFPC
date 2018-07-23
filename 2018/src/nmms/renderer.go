@@ -1,3 +1,4 @@
+// TODO: Use OpenGL to make this much more efficient and flexible.
 package nmms
 
 import (
