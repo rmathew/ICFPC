@@ -1,3 +1,0 @@
-# Use ". ./set_up_go" to set up Go for this directory.
-export PATH="${PATH}:/usr/local/go/bin"
-export GOPATH="${PWD}:${GOPATH}"
