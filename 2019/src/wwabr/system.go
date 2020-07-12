@@ -13,6 +13,8 @@ const (
 )
 
 type WwabrSystem struct {
+	MineMap   Map
+	WorkerLoc Point
 }
 
 func NewFromFile(p string) (*WwabrSystem, error) {
@@ -23,24 +25,29 @@ func NewFromFile(p string) (*WwabrSystem, error) {
 	defer f.Close()
 	s := bufio.NewScanner(f)
 	s.Buffer(make([]byte, maxInputLineSize), maxInputLineSize)
-	d := false
+
+	var wSys WwabrSystem
+	done := false
 	for s.Scan() {
-		if d {
+		if done {
 			return nil, errors.New("Extra line in problem-description.")
 		}
 		t := strings.Split(s.Text(), "#")
 		if len(t) != 4 {
 			return nil, fmt.Errorf("Got %d tuples instead of 4.", len(t))
 		}
-		// BEGIN: DEBUG
-		var m Map
-		if m, err = makeMap(t[0]); err != nil {
+		if wSys.MineMap, err = makeMap(t[0]); err != nil {
 			return nil, err
 		}
-		fmt.Printf("Map dimensions %dx%d\n", len(m[0]), len(m))
-		// END: DEBUG
-		d = true
+		if wSys.WorkerLoc, err = parsePoint(t[1]); err != nil {
+			return nil, err
+		}
+		if err = populateObstacles(wSys.MineMap, t[2]); err != nil {
+			return nil, err
+		}
+		printMap(wSys.MineMap)
+		done = true
 	}
 
-	return &WwabrSystem{}, nil
+	return &wSys, nil
 }
