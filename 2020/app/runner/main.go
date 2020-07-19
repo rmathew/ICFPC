@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	log.SetFlags(log.Ltime)
+	log.SetFlags(log.Ltime | log.Lshortfile)
 	if len(os.Args) < 2 {
 		log.Fatal("Missing input file-path.")
 	}
