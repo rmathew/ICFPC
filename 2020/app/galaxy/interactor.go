@@ -22,8 +22,8 @@ func DoInteraction(fds *FuncDefs) error {
 }
 
 func interact(fds *FuncDefs, state, event expr) (expr, expr, error) {
-	exp2eval := mkAp(mkAp(mkName(fds.ip), state), event)
-	res, err := eval(fds, exp2eval)
+	e := mkAp(mkAp(mkName(fds.ip), state), event)
+	res, err := eval(fds, e)
 	if err != nil {
 		return nil, nil, err
 	}
