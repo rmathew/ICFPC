@@ -10,7 +10,7 @@ func DoInteraction(fds *FuncDefs) error {
 	v := vect{x: 0, y: 0}
 	// for {
 	click := vec2e(v)
-	state /*images=*/, _, err = interact(fds, state, click)
+	state, _, err = interact(fds, state, click)
 	if err != nil {
 		return err
 	}

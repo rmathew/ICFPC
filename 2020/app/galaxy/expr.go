@@ -104,3 +104,27 @@ func mkAp(f, a expr) expr {
 func vec2e(v vect) expr {
 	return mkAp(mkAp(mkCons(), mkNum(v.x)), mkNum(v.y))
 }
+
+func eqExprs(e1, e2 expr) bool {
+	if e1 == e2 {
+		return true
+	}
+	if e1 == nil || e2 == nil {
+		return false
+	}
+	switch v1 := e1.(type) {
+	case *atom:
+		switch v2 := e2.(type) {
+		case *atom:
+			return v1.aType == v2.aType && v1.aNum == v2.aNum && v1.aStr == v2.aStr
+		}
+		return false
+	case *ap:
+		switch v2 := e2.(type) {
+		case *ap:
+			return eqExprs(v1.fun, v2.fun) && eqExprs(v1.arg, v2.arg)
+		}
+		return false
+	}
+	return false
+}

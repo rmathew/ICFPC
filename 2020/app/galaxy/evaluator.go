@@ -71,10 +71,11 @@ func evalTwoNums(fds *FuncDefs, e1, e2 expr) (int64, int64, error) {
 	return n1, n2, nil
 }
 
-func tryEvalAtom(fds *FuncDefs, a *atom) (expr, error) {
+func tryAtomEval(fds *FuncDefs, a *atom) (expr, error) {
 	if a.exp != nil {
 		return a.exp, nil
 	}
+
 	if a.aType == atName {
 		if e, ok := fds.fds[a.aStr]; ok {
 			return e, nil
@@ -83,94 +84,98 @@ func tryEvalAtom(fds *FuncDefs, a *atom) (expr, error) {
 	return a, nil
 }
 
-func tryEvalAp(fds *FuncDefs, a *ap) (expr, error) {
+func tryApEval(fds *FuncDefs, a *ap) (expr, error) {
 	if a.exp != nil {
 		return a.exp, nil
 	}
+
 	fe, err := eval(fds, a.fun)
 	if err != nil {
 		return nil, err
 	}
+
 	x := a.arg
-	if at, ok := fe.(*atom); ok && at.aType == atName {
-		switch at.aStr {
-		case "neg":
-			num, err1 := evalOneNum(fds, x)
-			if err1 != nil {
-				return nil, err1
+	if at, ok := fe.(*atom); ok {
+		switch {
+		case at.aType == atName && at.aStr == "neg":
+			var num int64
+			num, err = evalOneNum(fds, x)
+			if err != nil {
+				return nil, err
 			}
 			return mkNum(-num), nil
-		case "i":
+		case at.aType == atName && at.aStr == "i":
 			return x, nil
-		case "nil":
+		case at.aType == atNil:
 			return mkTrue(), nil
-		case "isnil":
+		case at.aType == atName && at.aStr == "isnil":
 			return mkAp(x, mkAp(mkTrue(), mkAp(mkTrue(), mkFalse()))), nil
-		case "car":
+		case at.aType == atName && at.aStr == "car":
 			return mkAp(x, mkTrue()), nil
-		case "cdr":
+		case at.aType == atName && at.aStr == "cdr":
 			return mkAp(x, mkFalse()), nil
 		}
 	} else if ap1, ok := fe.(*ap); ok {
-		f2e, err2 := eval(fds, ap1.fun)
-		if err2 != nil {
-			return nil, err2
+		var f2e expr
+		f2e, err = eval(fds, ap1.fun)
+		if err != nil {
+			return nil, err
 		}
 		y := ap1.arg
 		if at2, ok2 := f2e.(*atom); ok2 {
-			var n1, n2 int64
-			var berr error
+			var nx, ny int64
 			switch {
 			case at2.aType == atTrue:
 				return y, nil
 			case at2.aType == atFalse:
 				return x, nil
 			case at2.aType == atName && at2.aStr == "add":
-				n1, n2, berr = evalTwoNums(fds, x, y)
-				if berr != nil {
-					return nil, berr
+				nx, ny, err = evalTwoNums(fds, x, y)
+				if err != nil {
+					return nil, err
 				}
-				return mkNum(n1 + n2), nil
+				return mkNum(nx + ny), nil
 			case at2.aType == atName && at2.aStr == "mul":
-				n1, n2, berr = evalTwoNums(fds, x, y)
-				if berr != nil {
-					return nil, berr
+				nx, ny, err = evalTwoNums(fds, x, y)
+				if err != nil {
+					return nil, err
 				}
-				return mkNum(n1 * n2), nil
+				return mkNum(nx * ny), nil
 			case at2.aType == atName && at2.aStr == "div":
-				n1, n2, berr = evalTwoNums(fds, x, y)
-				if berr != nil {
-					return nil, berr
+				nx, ny, err = evalTwoNums(fds, x, y)
+				if err != nil {
+					return nil, err
 				}
 				// Deliberate x/y-switch.
-				return mkNum(n2 / n1), nil
+				return mkNum(ny / nx), nil
 			case at2.aType == atName && at2.aStr == "lt":
-				n1, n2, berr = evalTwoNums(fds, x, y)
-				if berr != nil {
-					return nil, berr
+				nx, ny, err = evalTwoNums(fds, x, y)
+				if err != nil {
+					return nil, err
 				}
 				// Deliberate x/y-switch.
-				if n2 < n1 {
+				if ny < nx {
 					return mkTrue(), nil
 				}
 				return mkFalse(), nil
 			case at2.aType == atName && at2.aStr == "eq":
-				n1, n2, berr = evalTwoNums(fds, x, y)
-				if berr != nil {
-					return nil, berr
+				nx, ny, err = evalTwoNums(fds, x, y)
+				if err != nil {
+					return nil, err
 				}
-				if n1 == n2 {
+				if nx == ny {
 					return mkTrue(), nil
 				}
 				return mkFalse(), nil
-			case at2.aType == atName && at2.aStr == "cons":
+			case at2.aType == atCons:
 				// Deliberate x/y-switch.
 				return evalCons(fds, y, x)
 			}
 		} else if ap2, ok2 := f2e.(*ap); ok2 {
-			f3e, err3 := eval(fds, ap2.fun)
-			if err3 != nil {
-				return nil, err3
+			var f3e expr
+			f3e, err = eval(fds, ap2.fun)
+			if err != nil {
+				return nil, err
 			}
 			z := ap2.arg
 			if at3, ok3 := f3e.(*atom); ok3 {
@@ -192,31 +197,31 @@ func tryEvalAp(fds *FuncDefs, a *ap) (expr, error) {
 }
 
 func evalCons(fds *FuncDefs, a, b expr) (expr, error) {
-	var e1, e2 expr
+	var ea, eb expr
 	var err error
-	e1, err = eval(fds, a)
+	ea, err = eval(fds, a)
 	if err != nil {
 		return nil, err
 	}
-	e2, err = eval(fds, b)
+	eb, err = eval(fds, b)
 	if err != nil {
 		return nil, err
 	}
-	res := mkAp(mkAp(mkCons(), e1), e2)
+	res := mkAp(mkAp(mkCons(), ea), eb)
 	if err = setCached(res, res); err != nil {
 		return nil, err
 	}
 	return res, nil
 }
 
-func tryEval(fds *FuncDefs, e expr) (expr, error) {
+func tryExprEval(fds *FuncDefs, e expr) (expr, error) {
 	switch v := e.(type) {
 	case *atom:
-		return tryEvalAtom(fds, v)
+		return tryAtomEval(fds, v)
 	case *ap:
-		return tryEvalAp(fds, v)
+		return tryApEval(fds, v)
 	}
-	return nil, fmt.Errorf("unknown kind of expr %v in tryEval()", e)
+	return nil, fmt.Errorf("unknown kind of expr %v in tryExprEval()", e)
 }
 
 func eval(fds *FuncDefs, e expr) (expr, error) {
@@ -230,10 +235,11 @@ func eval(fds *FuncDefs, e expr) (expr, error) {
 	if cached != nil {
 		return cached, nil
 	}
+
 	ie := e
-	for {
-		var res expr
-		res, err = tryEval(fds, e)
+	const maxIters = 1000000
+	for i := 0; i < maxIters; i++ {
+		res, err := tryExprEval(fds, e)
 		if err != nil {
 			return nil, err
 		}
@@ -241,7 +247,7 @@ func eval(fds *FuncDefs, e expr) (expr, error) {
 			log.Printf("ERROR: Expr %q evaluated to NULL.", e)
 			return nil, fmt.Errorf("NULL evaluation-result ")
 		}
-		if res == e {
+		if eqExprs(res, e) {
 			if err = setCached(ie, res); err != nil {
 				return nil, err
 			}
@@ -249,4 +255,5 @@ func eval(fds *FuncDefs, e expr) (expr, error) {
 		}
 		e = res
 	}
+	return nil, fmt.Errorf("could not converge after %d iterations", maxIters)
 }
