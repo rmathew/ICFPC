@@ -12,8 +12,14 @@ func main() {
 	if len(os.Args) < 2 {
 		log.Fatal("Missing input file-path.")
 	}
+	f := os.Args[1]
 
-	if err := galaxy.Evaluate(os.Args[1]); err != nil {
-		log.Fatalf("Unable to evaluate %q: %v", os.Args[1], err)
+	fds, err := galaxy.ParseFunctions(f)
+	if err != nil {
+		log.Fatalf("Unable to load & parse %q: %v", f, err)
+	}
+
+	if err = galaxy.DoInteraction(fds); err != nil {
+		log.Fatalf("Unable to interact using %q: %v", f, err)
 	}
 }

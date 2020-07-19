@@ -32,7 +32,7 @@ type token struct {
 	tNum  int64
 }
 
-type funcDef struct {
+type fnDef struct {
 	name string
 	def  expr
 }
@@ -64,7 +64,7 @@ func (t token) String() string {
 	return "<<UNKNOWN>>"
 }
 
-func parse(f string) (map[string]expr, error) {
+func ParseFunctions(f string) (*FuncDefs, error) {
 	log.Printf("Reading the interaction-protocol from %q.", f)
 	file, err := os.Open(f)
 	if err != nil {
@@ -72,7 +72,7 @@ func parse(f string) (map[string]expr, error) {
 	}
 	defer file.Close()
 
-	funcDefs := make(map[string]expr)
+	fds := &FuncDefs{ip: "", fds: make(map[string]expr)}
 
 	scanner := bufio.NewScanner(file)
 	for ln := 1; scanner.Scan(); ln++ {
@@ -80,24 +80,26 @@ func parse(f string) (map[string]expr, error) {
 		if len(line) == 0 {
 			continue
 		}
-		var fd funcDef
-		if fd, err = parseDef(line); err != nil {
+		var fd fnDef
+		if fd, err = parseFuncDef(line); err != nil {
 			log.Printf("Parse-error at line #%d: %v", ln, err)
 			log.Printf("Line #%d:\n\t%s", ln, string(line))
 			return nil, err
 		}
 		log.Printf("Parsed:\n%s = %s", fd.name, fd.def)
-		funcDefs[fd.name] = fd.def
+		fds.fds[fd.name] = fd.def
+		fds.ip = fd.name
 	}
 	if err = scanner.Err(); err != nil {
 		return nil, err
 	}
 
-	return funcDefs, nil
+	log.Printf("Found %d func-def(s) in %q.", len(fds.fds), f)
+	return fds, nil
 }
 
-func parseDef(d []byte) (funcDef, error) {
-	var f funcDef
+func parseFuncDef(d []byte) (fnDef, error) {
+	var f fnDef
 	var err error
 	var s parseState
 
@@ -148,34 +150,31 @@ func getExpression(s *parseState) (expr, error) {
 	tk := &s.tokens[s.idx]
 	s.idx++
 
-	var e expr
 	switch tk.tType {
 	case tkTrue:
-		e = &atom{expression: &expression{}, aType: atTrue}
+		return mkTrue(), nil
 	case tkFalse:
-		e = &atom{expression: &expression{}, aType: atFalse}
+		return mkFalse(), nil
 	case tkNil:
-		e = &atom{expression: &expression{}, aType: atNil}
+		return mkNil(), nil
 	case tkCons:
-		e = &atom{expression: &expression{}, aType: atCons}
+		return mkCons(), nil
 	case tkNumber:
-		e = &atom{expression: &expression{}, aType: atNumber, aNum: tk.tNum}
+		return mkNum(tk.tNum), nil
 	case tkName:
-		e = &atom{expression: &expression{}, aType: atName, aStr: tk.tStr}
+		return mkName(tk.tStr), nil
 	case tkAp:
-		a := &ap{expression: &expression{}}
+		var f, a expr
 		var err error
-		if a.fun, err = getExpression(s); err != nil {
+		if f, err = getExpression(s); err != nil {
 			return nil, fmt.Errorf("error parsing ap-fun: %w", err)
 		}
-		if a.arg, err = getExpression(s); err != nil {
+		if a, err = getExpression(s); err != nil {
 			return nil, fmt.Errorf("error parsing ap-arg: %w", err)
 		}
-		e = a
-	default:
-		return nil, fmt.Errorf("unexpected token %q in expression", tk)
+		return mkAp(f, a), nil
 	}
-	return e, nil
+	return nil, fmt.Errorf("unexpected token %q in expression", tk)
 }
 
 func getTokens(d []byte) ([]token, error) {
