@@ -257,3 +257,32 @@ func eval(fds *FuncDefs, e expr) (expr, error) {
 	}
 	return nil, fmt.Errorf("could not converge after %d iterations", maxIters)
 }
+
+func extrList(fds *FuncDefs, e expr) ([]expr, error) {
+	list := make([]expr, 0)
+	eol := mkNil()
+	if e == nil || eqExprs(e, eol) {
+		return list, nil
+	}
+
+	carExp := mkAp(mkName("car"), e)
+	head, err := eval(fds, carExp)
+	if err != nil {
+		return nil, err
+	}
+	list = append(list, head)
+
+	var tail expr
+	cdrExp := mkAp(mkName("cdr"), e)
+	tail, err = eval(fds, cdrExp)
+	if err != nil {
+		return nil, err
+	}
+
+	var tailList []expr
+	tailList, err = extrList(fds, tail)
+	if err != nil {
+		return nil, err
+	}
+	return append(list, tailList...), nil
+}

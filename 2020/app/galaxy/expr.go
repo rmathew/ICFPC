@@ -116,7 +116,8 @@ func eqExprs(e1, e2 expr) bool {
 	case *atom:
 		switch v2 := e2.(type) {
 		case *atom:
-			return v1.aType == v2.aType && v1.aNum == v2.aNum && v1.aStr == v2.aStr
+			return v1.aType == v2.aType && v1.aNum == v2.aNum &&
+				v1.aStr == v2.aStr
 		}
 		return false
 	case *ap:
