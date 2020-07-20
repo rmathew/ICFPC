@@ -73,6 +73,13 @@ func (a *ap) String() string {
 	return fmt.Sprintf("(ap %s %s)", a.fun, a.arg)
 }
 
+func (v *vect) String() string {
+	if v == nil {
+		return "<<NIL vect>>"
+	}
+	return fmt.Sprintf("(%d, %d)", v.x, v.y)
+}
+
 func mkNil() expr {
 	return &atom{exp: nil, aType: atNil}
 }
@@ -103,10 +110,6 @@ func mkAp(f, a expr) expr {
 
 func mkPair(e1, e2 expr) expr {
 	return mkAp(mkAp(mkCons(), e1), e2)
-}
-
-func vec2e(v vect) expr {
-	return mkPair(mkNum(v.x), mkNum(v.y))
 }
 
 func eqExprs(e1, e2 expr) bool {
@@ -188,4 +191,24 @@ func isPair(e expr) (bool, expr, expr) {
 		return false, nil, nil
 	}
 	return true, vf.arg, v.arg
+}
+
+func vec2e(v *vect) expr {
+	return mkPair(mkNum(v.x), mkNum(v.y))
+}
+
+func e2vec(e expr) (*vect, error) {
+	var e1, e2 expr
+	var n1, n2 int64
+	var ok bool
+	if ok, e1, e2 = isPair(e); !ok {
+		return nil, fmt.Errorf("not a pair: %v", e)
+	}
+	if ok, n1 = isNumber(e1); !ok {
+		return nil, fmt.Errorf("%v not a number in %v", e1, e)
+	}
+	if ok, n2 = isNumber(e2); !ok {
+		return nil, fmt.Errorf("%v not a number in %v", e2, e)
+	}
+	return &vect{x: n1, y: n2}, nil
 }

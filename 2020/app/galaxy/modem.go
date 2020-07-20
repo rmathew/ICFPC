@@ -2,7 +2,11 @@ package galaxy
 
 import (
 	"fmt"
+	"io/ioutil"
+	"log"
 	"math/bits"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -34,7 +38,7 @@ func modulate(n int64) string {
 
 func decodeNumber(r []rune, n *int64) (int, error) {
 	if len(r) < 3 {
-		return 0, fmt.Errorf("too few runes (%d) to demodulate", len(r))
+		return 0, fmt.Errorf("too few runes (%d) to decodeNumber", len(r))
 	}
 	var mult int64
 	if r[0] == '0' && r[1] == '1' {
@@ -162,4 +166,61 @@ func demodulateList(r []rune) (expr, error) {
 		}
 	}
 	return mkPair(e1, e2), nil
+}
+
+func encodeMsg(e expr) (string, error) {
+	if ok, n := isNumber(e); ok {
+		return modulate(n), nil
+	}
+	return modulateList(e)
+}
+
+func decodeMsg(r []rune) (expr, error) {
+	if r[0] == '1' && r[1] == '1' {
+		return demodulateList(r)
+	}
+	n, err := demodulate(r)
+	if err != nil {
+		return nil, err
+	}
+	return mkNum(n), nil
+}
+
+func sendToAliens(ctx *InterCtx, e expr) (expr, error) {
+	var err error
+	var msg string
+	if msg, err = encodeMsg(e); err != nil {
+		return nil, err
+	}
+
+	var u *url.URL
+	u, err = url.Parse(ctx.BaseUrl)
+	if err != nil {
+		return nil, err
+	}
+	if len(ctx.ApiKey) > 0 {
+		q := u.Query()
+		q.Add("apiKey", ctx.ApiKey)
+		u.RawQuery = q.Encode()
+	}
+	us := u.String()
+	log.Printf("Sending message %q to aliens using URL %q.", msg, us)
+
+	var res *http.Response
+	res, err = http.Post(us, "text/plain", strings.NewReader(msg))
+	if err != nil {
+		log.Printf("Server-error: %v", res)
+		return nil, err
+	}
+	log.Printf("Status: %q", res.Status)
+	defer res.Body.Close()
+
+	var body []byte
+	body, err = ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	bs := string(body)
+	log.Printf("Received: %q", bs)
+	return decodeMsg([]rune(bs))
 }

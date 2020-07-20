@@ -3,6 +3,7 @@ package galaxy
 import (
 	"fmt"
 	"log"
+	"math/rand"
 )
 
 type InterCtx struct {
@@ -16,52 +17,133 @@ func DoInteraction(ctx *InterCtx) error {
 	var images expr
 	var err error
 	state := mkNil()
-	v := vect{x: 0, y: 0}
-	// for {
-	click := vec2e(v)
-	state, images, err = interact(ctx, state, click)
-	if err != nil {
-		return err
+	v := &vect{x: 0, y: 0}
+
+	const maxIters = 1000000
+	for i := 0; i < maxIters; i++ {
+		log.Printf("DoInteract(): #%d", i)
+
+		click := vec2e(v)
+		state, images, err = interact(ctx, state, click)
+		if err != nil {
+			return err
+		}
+
+		err = drawImages(ctx, images)
+		if err != nil {
+			return err
+		}
+
+		v, err = requestClick()
+		if err != nil {
+			return err
+		}
+		// log.Printf("New state: %s", state)
+		// log.Printf("Images: %s", images)
 	}
-	// v = requestClick()
-	log.Printf("New state: %s", state)
-	log.Printf("Images: %s", images)
-	// }
 
 	return nil
 }
 
 func interact(ctx *InterCtx, state, event expr) (expr, expr, error) {
 	fds := ctx.Protocol
-	e := mkAp(mkAp(mkName(fds.ip), state), event)
-	res, err := eval(fds, e)
-	if err != nil {
-		return nil, nil, err
-	}
-	log.Printf("Result: %s", res)
 
-	var resList []expr
-	resList, err = extrList(fds, res)
-	if err != nil {
-		return nil, nil, err
+	st := state
+	ev := event
+	const maxIters = 1000000
+	for i := 0; i < maxIters; i++ {
+		log.Printf("interact(): #%d", i)
+
+		e := mkAp(mkAp(mkName(fds.ip), st), ev)
+		res, err := eval(fds, e)
+		if err != nil {
+			return nil, nil, err
+		}
+		// log.Printf("Result: %s", res)
+
+		var resList []expr
+		resList, err = extrList(fds, res)
+		if err != nil {
+			return nil, nil, err
+		}
+		/*
+			log.Printf("Result-list has %d elements", len(resList))
+			for i, v := range resList {
+				log.Printf("#%d: %s", i, v)
+			}
+		*/
+		if len(resList) != 3 {
+			return nil, nil, fmt.Errorf(
+				"result-list has %d elements instead of 3", len(resList))
+		}
+		newSt := resList[1]
+		data := resList[2]
+
+		var flag int64
+		flag, err = evalOneNum(fds, resList[0])
+		if err != nil {
+			return nil, nil, err
+		}
+		if flag == 0 {
+			return newSt, data, nil
+		}
+
+		var ar expr
+		ar, err = sendToAliens(ctx, data)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		st = newSt
+		ev = ar
 	}
-	log.Printf("Result-list has %d elements", len(resList))
-	for i, v := range resList {
-		log.Printf("#%d: %s", i, v)
-	}
-	if len(resList) != 3 {
-		return nil, nil, fmt.Errorf(
-			"result-list has %d elements instead of 3", len(resList))
+	return nil, nil, fmt.Errorf("incomplete after %d iterations", maxIters)
+}
+
+func extrDrawLists(fds *FuncDefs, imgs expr) ([][]*vect, error) {
+	var il []expr
+	var err error
+	if il, err = extrList(fds, imgs); err != nil {
+		log.Printf("Error converting expr to images list: %v", err)
+		return nil, err
 	}
 
-	var flag int64
-	flag, err = evalOneNum(fds, resList[0])
+	dls := make([][]*vect, 0, len(il))
+	// log.Printf("Images-list has %d elements", len(il))
+	for i, ili := range il {
+		var vl []expr
+		if vl, err = extrList(fds, ili); err != nil {
+			log.Printf("Error converting img[%d] to vectors: %v", i, err)
+			return nil, err
+		}
+		dls = append(dls, make([]*vect, 0, len(vl)))
+		for j, vlj := range vl {
+			var v *vect
+			if v, err = e2vec(vlj); err != nil {
+				log.Printf(
+					"Error converting img[%d][%d] to vector: %v", i, j, err)
+				return nil, err
+			}
+			// log.Printf("Vec[%d][%d]: %v", i, j, v)
+			dls[i] = append(dls[i], v)
+		}
+	}
+	return dls, nil
+}
+
+func drawImages(ctx *InterCtx, imgs expr) error {
+	dls, err := extrDrawLists(ctx.Protocol, imgs)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
-	if flag == 0 {
-		return resList[1], resList[2], nil
+	for i, vi := range dls {
+		for j, vj := range vi {
+			log.Printf("img[%d][%d]=%v", i, j, vj)
+		}
 	}
-	// TODO: Implement flag-fetching and sending to aliens.
-	return nil, nil, nil
+	return nil
+}
+
+func requestClick() (*vect, error) {
+	return &vect{x: int64(rand.Intn(64)), y: int64(rand.Intn(64))}, nil
 }
