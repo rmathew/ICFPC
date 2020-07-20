@@ -11,6 +11,7 @@ type InterCtx struct {
 	ApiKey    string
 	PlayerKey int64
 	Protocol  *FuncDefs
+	Viewer    *GalaxyViewer
 }
 
 func DoInteraction(ctx *InterCtx) error {
@@ -18,9 +19,10 @@ func DoInteraction(ctx *InterCtx) error {
 	var err error
 	state := mkNil()
 	v := &vect{x: 0, y: 0}
+	run := true
 
 	const maxIters = 1000000
-	for i := 0; i < maxIters; i++ {
+	for i := 0; i < maxIters && run; i++ {
 		log.Printf("DoInteract(): #%d", i)
 
 		click := vec2e(v)
@@ -34,10 +36,7 @@ func DoInteraction(ctx *InterCtx) error {
 			return err
 		}
 
-		v, err = requestClick()
-		if err != nil {
-			return err
-		}
+		run, v = requestClick(ctx)
 		// log.Printf("New state: %s", state)
 		// log.Printf("Images: %s", images)
 	}
@@ -50,8 +49,9 @@ func interact(ctx *InterCtx, state, event expr) (expr, expr, error) {
 
 	st := state
 	ev := event
+	run := true
 	const maxIters = 1000000
-	for i := 0; i < maxIters; i++ {
+	for i := 0; i < maxIters && run; i++ {
 		log.Printf("interact(): #%d", i)
 
 		e := mkAp(mkAp(mkName(fds.ip), st), ev)
@@ -96,6 +96,8 @@ func interact(ctx *InterCtx, state, event expr) (expr, expr, error) {
 
 		st = newSt
 		ev = ar
+
+		run = !shouldBreak(ctx)
 	}
 	return nil, nil, fmt.Errorf("incomplete after %d iterations", maxIters)
 }
@@ -141,9 +143,22 @@ func drawImages(ctx *InterCtx, imgs expr) error {
 			log.Printf("img[%d][%d]=%v", i, j, vj)
 		}
 	}
+	if ctx.Viewer != nil {
+		ctx.Viewer.update(dls)
+	}
 	return nil
 }
 
-func requestClick() (*vect, error) {
-	return &vect{x: int64(rand.Intn(64)), y: int64(rand.Intn(64))}, nil
+func shouldBreak(ctx *InterCtx) bool {
+	if ctx.Viewer != nil {
+		return ctx.Viewer.shouldBreak()
+	}
+	return false
+}
+
+func requestClick(ctx *InterCtx) (bool, *vect) {
+	if ctx.Viewer != nil {
+		return ctx.Viewer.requestClick()
+	}
+	return true, &vect{x: int64(rand.Intn(64)), y: int64(rand.Intn(64))}
 }

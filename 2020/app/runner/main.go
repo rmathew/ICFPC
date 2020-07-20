@@ -26,7 +26,18 @@ func main() {
 		log.Fatalf("Unable to load & parse %q: %v", f, err)
 	}
 
-	ctx := &galaxy.InterCtx{BaseUrl: *bUrl, ApiKey: *aKey, Protocol: fds}
+	gv := &galaxy.GalaxyViewer{}
+	if err = gv.Init(); err != nil {
+		log.Fatalf("Unable to create Galaxy Viewer: %v", err)
+	}
+	defer gv.Quit()
+
+	ctx := &galaxy.InterCtx{
+		BaseUrl:  *bUrl,
+		ApiKey:   *aKey,
+		Protocol: fds,
+		Viewer:   gv,
+	}
 	if err = galaxy.DoInteraction(ctx); err != nil {
 		log.Fatalf("Unable to interact using %q: %v", f, err)
 	}
