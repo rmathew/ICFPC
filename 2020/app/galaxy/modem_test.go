@@ -82,3 +82,30 @@ func TestModulateList(t *testing.T) {
 		}
 	}
 }
+
+func TestDemodulateList(t *testing.T) {
+	tests := []struct {
+		s    string
+		want string
+	}{
+		// Spaces inserted here for understanding to be removed before testing.
+		{"11", "nil"},
+		{"11 00 00", "ap ap cons nil nil"},
+		{"11 010 00", "ap ap cons 0 nil"},
+		{"11 01100001 01100010", "ap ap cons 1 2"},
+		{"11 01100001 11 01100010 00", "ap ap cons 1 ap ap cons 2 nil"},
+	}
+	for _, tc := range tests {
+		we, err := strToExpr(tc.want)
+		if err != nil {
+			t.Errorf("Error converting %q to expr %v.", tc.want, err)
+		}
+		got, grr := demodulateList([]rune(strings.ReplaceAll(tc.s, " ", "")))
+		if grr != nil {
+			t.Errorf("For %q, got error %v.", tc.s, grr)
+		}
+		if !eqExprs(got, we) {
+			t.Errorf("For %q, wanted %q, got %q.", tc.s, we, got)
+		}
+	}
+}
