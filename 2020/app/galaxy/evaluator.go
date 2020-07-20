@@ -207,7 +207,7 @@ func evalCons(fds *FuncDefs, a, b expr) (expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := mkAp(mkAp(mkCons(), ea), eb)
+	res := mkPair(ea, eb)
 	if err = setCached(res, res); err != nil {
 		return nil, err
 	}
@@ -260,8 +260,7 @@ func eval(fds *FuncDefs, e expr) (expr, error) {
 
 func extrList(fds *FuncDefs, e expr) ([]expr, error) {
 	list := make([]expr, 0)
-	eol := mkNil()
-	if e == nil || eqExprs(e, eol) {
+	if e == nil || isNil(e) {
 		return list, nil
 	}
 

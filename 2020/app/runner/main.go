@@ -1,15 +1,15 @@
 package main
 
 import (
-	"log"
 	"flag"
+	"log"
 
 	"app/galaxy"
 )
 
 var bUrl = flag.String("base_url", "https://icfpc2020-api.testkontur.ru/",
-	"Base URL for the Alien Proxy server.");
-var aKey = flag.String("api_key", "", "API-key for the Alien Proxy server.");
+	"Base URL for the Alien Proxy server.")
+var aKey = flag.String("api_key", "", "API-key for the Alien Proxy server.")
 
 func main() {
 	flag.Parse()

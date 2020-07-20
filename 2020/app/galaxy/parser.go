@@ -64,6 +64,22 @@ func (t token) String() string {
 	return "<<UNKNOWN>>"
 }
 
+func strToExpr(s string) (expr, error) {
+	var e expr
+	var ps parseState
+	var err error
+
+	ps.tokens, err = getTokens([]byte(s))
+	if err != nil {
+		return nil, err
+	}
+	e, err = parseExpression(&ps)
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
 func ParseFunctions(f string) (*FuncDefs, error) {
 	log.Printf("Reading the interaction-protocol from %q.", f)
 	file, err := os.Open(f)
@@ -101,24 +117,24 @@ func ParseFunctions(f string) (*FuncDefs, error) {
 func parseFuncDef(d []byte) (fnDef, error) {
 	var f fnDef
 	var err error
-	var s parseState
+	var ps parseState
 
-	s.tokens, err = getTokens(d)
+	ps.tokens, err = getTokens(d)
 	if err != nil {
 		return f, err
 	}
 
-	f.name, err = getFuncName(&s)
+	f.name, err = parseFuncName(&ps)
 	if err != nil {
 		return f, err
 	}
 
-	err = expectEquals(&s)
+	err = parseEquals(&ps)
 	if err != nil {
 		return f, err
 	}
 
-	f.def, err = getExpression(&s)
+	f.def, err = parseExpression(&ps)
 	if err != nil {
 		return f, err
 	}
@@ -126,29 +142,29 @@ func parseFuncDef(d []byte) (fnDef, error) {
 	return f, nil
 }
 
-func getFuncName(s *parseState) (string, error) {
-	if s.idx < len(s.tokens) && s.tokens[s.idx].tType == tkName {
-		n := s.tokens[s.idx].tStr
-		s.idx++
+func parseFuncName(ps *parseState) (string, error) {
+	if ps.idx < len(ps.tokens) && ps.tokens[ps.idx].tType == tkName {
+		n := ps.tokens[ps.idx].tStr
+		ps.idx++
 		return n, nil
 	}
 	return "", fmt.Errorf("expected function-name not found")
 }
 
-func expectEquals(s *parseState) error {
-	if s.idx < len(s.tokens) && s.tokens[s.idx].tType == tkEquals {
-		s.idx++
+func parseEquals(ps *parseState) error {
+	if ps.idx < len(ps.tokens) && ps.tokens[ps.idx].tType == tkEquals {
+		ps.idx++
 		return nil
 	}
 	return fmt.Errorf("expected equals not found")
 }
 
-func getExpression(s *parseState) (expr, error) {
-	if s.idx >= len(s.tokens) {
+func parseExpression(ps *parseState) (expr, error) {
+	if ps.idx >= len(ps.tokens) {
 		return nil, fmt.Errorf("unexpected end of expression")
 	}
-	tk := &s.tokens[s.idx]
-	s.idx++
+	tk := &ps.tokens[ps.idx]
+	ps.idx++
 
 	switch tk.tType {
 	case tkTrue:
@@ -166,10 +182,10 @@ func getExpression(s *parseState) (expr, error) {
 	case tkAp:
 		var f, a expr
 		var err error
-		if f, err = getExpression(s); err != nil {
+		if f, err = parseExpression(ps); err != nil {
 			return nil, fmt.Errorf("error parsing ap-fun: %w", err)
 		}
-		if a, err = getExpression(s); err != nil {
+		if a, err = parseExpression(ps); err != nil {
 			return nil, fmt.Errorf("error parsing ap-arg: %w", err)
 		}
 		return mkAp(f, a), nil

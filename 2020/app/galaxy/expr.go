@@ -101,8 +101,12 @@ func mkAp(f, a expr) expr {
 	return &ap{exp: nil, fun: f, arg: a}
 }
 
+func mkPair(e1, e2 expr) expr {
+	return mkAp(mkAp(mkCons(), e1), e2)
+}
+
 func vec2e(v vect) expr {
-	return mkAp(mkAp(mkCons(), mkNum(v.x)), mkNum(v.y))
+	return mkPair(mkNum(v.x), mkNum(v.y))
 }
 
 func eqExprs(e1, e2 expr) bool {
@@ -128,4 +132,60 @@ func eqExprs(e1, e2 expr) bool {
 		return false
 	}
 	return false
+}
+
+func isAtomOfType(e expr, at atomType) bool {
+	if e == nil {
+		return false
+	}
+	if v, ok := e.(*atom); ok {
+		return v.aType == at
+	}
+	return false
+}
+
+func isNil(e expr) bool {
+	return isAtomOfType(e, atNil)
+}
+
+func isCons(e expr) bool {
+	return isAtomOfType(e, atCons)
+}
+
+func isNumber(e expr) (bool, int64) {
+	if e == nil {
+		return false, 0
+	}
+	if v, ok := e.(*atom); ok && v.aType == atNumber {
+		return true, v.aNum
+	}
+	return false, 0
+}
+
+func isName(e expr) (bool, string) {
+	if e == nil {
+		return false, ""
+	}
+	if v, ok := e.(*atom); ok && v.aType == atName {
+		return true, v.aStr
+	}
+	return false, ""
+}
+
+func isPair(e expr) (bool, expr, expr) {
+	if e == nil {
+		return false, nil, nil
+	}
+	v, vOk := e.(*ap)
+	if !vOk {
+		return false, nil, nil
+	}
+	vf, vfOk := v.fun.(*ap)
+	if !vfOk {
+		return false, nil, nil
+	}
+	if !isCons(vf.fun) {
+		return false, nil, nil
+	}
+	return true, vf.arg, v.arg
 }
