@@ -23,6 +23,9 @@ func DoInteraction(ctx *InterCtx) error {
 
 	const maxIters = 1000000
 	for i := 0; i < maxIters && run; i++ {
+		// if i%10000 == 0 {
+		// 	log.Printf("Completed %d interactions.", i)
+		// }
 		log.Printf("DoInteract(): #%d", i)
 
 		click := vec2e(v)
@@ -52,7 +55,7 @@ func interact(ctx *InterCtx, state, event expr) (expr, expr, error) {
 	run := true
 	const maxIters = 1000000
 	for i := 0; i < maxIters && run; i++ {
-		log.Printf("interact(): #%d", i)
+		// log.Printf("interact(): #%d", i)
 
 		e := mkAp(mkAp(mkName(fds.ip), st), ev)
 		res, err := eval(fds, e)
@@ -138,11 +141,14 @@ func drawImages(ctx *InterCtx, imgs expr) error {
 	if err != nil {
 		return err
 	}
-	for i, vi := range dls {
-		for j, vj := range vi {
-			log.Printf("img[%d][%d]=%v", i, j, vj)
+	/*
+		for i, vi := range dls {
+			for j, vj := range vi {
+				log.Printf("img[%d][%d]=%v", i, j, vj)
+			}
 		}
-	}
+	*/
+	// log.Printf("#Imgs: %d", len(dls))
 	if ctx.Viewer != nil {
 		ctx.Viewer.update(dls)
 	}

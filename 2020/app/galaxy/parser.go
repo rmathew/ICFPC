@@ -102,7 +102,7 @@ func ParseFunctions(f string) (*FuncDefs, error) {
 			log.Printf("Line #%d:\n\t%s", ln, string(line))
 			return nil, err
 		}
-		log.Printf("Parsed:\n%s = %s", fd.name, fd.def)
+		// log.Printf("Parsed:\n%s = %s", fd.name, fd.def)
 		fds.fds[fd.name] = fd.def
 		fds.ip = fd.name
 	}

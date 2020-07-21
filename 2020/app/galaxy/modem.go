@@ -198,6 +198,7 @@ func sendToAliens(ctx *InterCtx, e expr) (expr, error) {
 	if err != nil {
 		return nil, err
 	}
+	u.Path = "/aliens/send"
 	if len(ctx.ApiKey) > 0 {
 		q := u.Query()
 		q.Add("apiKey", ctx.ApiKey)
