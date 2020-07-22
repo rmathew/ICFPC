@@ -67,15 +67,17 @@ func TestModulateList(t *testing.T) {
 		{"ap ap cons 0 nil", "11 010 00"},
 		{"ap ap cons 1 2", "11 01100001 01100010"},
 		{"ap ap cons 1 ap ap cons 2 nil", "11 01100001 11 01100010 00"},
+		{"ap ap cons ap ap cons 1 nil ap ap cons 2 nil",
+			"11 11 01100001 00 11 01100010 00"},
 	}
 	for _, tc := range tests {
 		e, err := strToExpr(tc.e)
 		if err != nil {
 			t.Errorf("Error converting %q to expr %v.", tc.e, err)
 		}
-		got, grr := modulateList(e)
-		if grr != nil {
-			t.Errorf("For %q, got error %v.", tc.e, grr)
+		got, gErr := modulateList(e)
+		if gErr != nil {
+			t.Errorf("For %q, got error %v.", tc.e, gErr)
 		}
 		if got != strings.ReplaceAll(tc.want, " ", "") {
 			t.Errorf("For %q, wanted %q, got %q.", tc.e, tc.want, got)
@@ -94,18 +96,25 @@ func TestDemodulateList(t *testing.T) {
 		{"11 010 00", "ap ap cons 0 nil"},
 		{"11 01100001 01100010", "ap ap cons 1 2"},
 		{"11 01100001 11 01100010 00", "ap ap cons 1 ap ap cons 2 nil"},
+		{"11 11 01100001 00 11 01100010 00",
+			"ap ap cons ap ap cons 1 nil ap ap cons 2 nil"},
 	}
 	for _, tc := range tests {
 		we, err := strToExpr(tc.want)
 		if err != nil {
 			t.Errorf("Error converting %q to expr %v.", tc.want, err)
 		}
-		got, grr := demodulateList([]rune(strings.ReplaceAll(tc.s, " ", "")))
-		if grr != nil {
-			t.Errorf("For %q, got error %v.", tc.s, grr)
+		st := strings.ReplaceAll(tc.s, " ", "")
+		gotE, gotI, gErr := demodulateList([]rune(st))
+		if gErr != nil {
+			t.Errorf("For %q, got error %v.", tc.s, gErr)
 		}
-		if !eqExprs(got, we) {
-			t.Errorf("For %q, wanted %q, got %q.", tc.s, we, got)
+		if !eqExprs(gotE, we) {
+			t.Errorf("For %q, wanted %q, got %q.", tc.s, we, gotE)
+		}
+		if gotI != len(st) {
+			t.Errorf(
+				"For %q, wanted %d eaten, got %d eaten.", tc.s, len(st), gotI)
 		}
 	}
 }

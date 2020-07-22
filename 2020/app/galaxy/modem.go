@@ -82,6 +82,19 @@ func demodulate(r []rune) (int64, error) {
 	return n, nil
 }
 
+func modulateListElt(e expr) (string, error) {
+	if isNil(e) {
+		return "00", nil
+	} else if ok, n := isNumber(e); ok {
+		return modulate(n), nil
+	} else if s, err := modulateList(e); err == nil {
+		return s, nil
+	} else {
+		return "", fmt.Errorf("error modulating list-element %v: %v", e, err)
+	}
+	return "", nil
+}
+
 func modulateList(e expr) (string, error) {
 	if e == nil {
 		return "", fmt.Errorf("NULL expr")
@@ -99,73 +112,69 @@ func modulateList(e expr) (string, error) {
 		return "", fmt.Errorf("not nil, or pair: %v", e)
 	}
 
-	var n int64
-	if isNil(e1) {
-		b.WriteString("00")
-	} else if ok, n = isNumber(e1); ok {
-		b.WriteString(modulate(n))
+	if s, err := modulateListElt(e1); err == nil {
+		b.WriteString(s)
 	} else {
-		return "", fmt.Errorf("not nil, or number: %v", e1)
+		return "", nil
+	}
+	if s, err := modulateListElt(e2); err == nil {
+		b.WriteString(s)
+	} else {
+		return "", nil
 	}
 
-	if isNil(e2) {
-		b.WriteString("00")
-	} else if ok, n = isNumber(e2); ok {
-		b.WriteString(modulate(n))
-	} else {
-		e2m, err := modulateList(e2)
-		if err != nil {
-			return "", fmt.Errorf("error modulating %v: %v", e2, err)
-		}
-		b.WriteString(e2m)
-	}
 	return b.String(), nil
 }
 
-func demodulateList(r []rune) (expr, error) {
-	if len(r) < 2 {
-		return nil, fmt.Errorf("too few runes (%d) to demodulate", len(r))
-	}
-	if r[0] != '1' || r[1] != '1' {
-		return nil, fmt.Errorf("not encoding a list %q", string(r[:2]))
-	}
-	if len(r) == 2 {
-		return mkNil(), nil
-	}
-	// "11", plus at least two bits each for the pair.
-	if len(r) < 6 {
-		return 0, fmt.Errorf("too few runes %d; need >= 6", len(r))
-	}
-
-	idx := 2
-	inc := 0
-	var e1, e2 expr
+func demodulateListElt(r []rune) (expr, int, error) {
+	var e expr
+	idx := 0
 	var n int64
 	var err error
-	if r[idx] == '0' && r[idx+1] == '0' {
-		e1 = mkNil()
-		idx += 2
-	} else if inc, err = decodeNumber(r[idx:], &n); err == nil {
-		e1 = mkNum(n)
-		idx += inc
-	} else {
-		return nil, fmt.Errorf("nil/number not at %d in %q", idx, string(r))
+	if r[0] == '0' && r[1] == '0' {
+		e = mkNil()
+		idx = 2
+	} else if idx, err = decodeNumber(r, &n); err == nil {
+		e = mkNum(n)
+	} else if e, idx, err = demodulateList(r); err != nil {
+		return nil, 0, fmt.Errorf(
+			"error demodulating list %q: %v", string(r), err)
+	}
+	return e, idx, nil
+}
+
+func demodulateList(r []rune) (expr, int, error) {
+	if len(r) < 2 {
+		return nil, 0, fmt.Errorf("too few runes (%d) to demodulate", len(r))
+	}
+	if r[0] != '1' || r[1] != '1' {
+		return nil, 0, fmt.Errorf("not encoding a list %q", string(r[:2]))
+	}
+	idx := 2
+	if len(r) == 2 {
+		return mkNil(), idx, nil
 	}
 
-	if r[idx] == '0' && r[idx+1] == '0' {
-		e2 = mkNil()
-		idx += 2
-	} else if inc, err = decodeNumber(r[idx:], &n); err == nil {
-		e2 = mkNum(n)
+	// "11", plus at least two bits each for the pair.
+	if len(r) < 6 {
+		return nil, 0, fmt.Errorf("too few runes %d; need >= 6", len(r))
+	}
+
+	inc := 0
+	var e1, e2 expr
+	var err error
+	if e1, inc, err = demodulateListElt(r[idx:]); err == nil {
 		idx += inc
 	} else {
-		e2, err = demodulateList(r[idx:])
-		if err != nil {
-			return nil, fmt.Errorf(
-				"error demodulating list %q at %d: %v", string(r), idx, err)
-		}
+		return nil, 0, err
 	}
-	return mkPair(e1, e2), nil
+	if e2, inc, err = demodulateListElt(r[idx:]); err == nil {
+		idx += inc
+	} else {
+		return nil, 0, err
+	}
+
+	return mkPair(e1, e2), idx, nil
 }
 
 func encodeMsg(e expr) (string, error) {
@@ -177,7 +186,8 @@ func encodeMsg(e expr) (string, error) {
 
 func decodeMsg(r []rune) (expr, error) {
 	if r[0] == '1' && r[1] == '1' {
-		return demodulateList(r)
+		e, _, err := demodulateList(r)
+		return e, err
 	}
 	n, err := demodulate(r)
 	if err != nil {
