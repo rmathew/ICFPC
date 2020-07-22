@@ -23,8 +23,8 @@ type GalaxyViewer struct {
 }
 
 func (v *GalaxyViewer) vec2scr(iv *vect, x, y []int16) {
-	xx := int64(iv.x*int64(v.zoomLevel) + winWidth/2)
-	yy := int64(iv.y*int64(v.zoomLevel) + winHeight/2)
+	xx := int64(winWidth/2 + iv.x*int64(v.zoomLevel))
+	yy := int64(winHeight/2 - iv.y*int64(v.zoomLevel))
 	if xx < 0 || yy < 0 || xx > winWidth || yy > winHeight {
 		log.Printf("ERROR: %v maps to invalid coords (%d, %d).", iv, xx, yy)
 		return
@@ -42,10 +42,18 @@ func (v *GalaxyViewer) vec2scr(iv *vect, x, y []int16) {
 }
 
 func (v *GalaxyViewer) scr2vec(x, y int32) *vect {
-	return &vect{
-		int64(x/v.zoomLevel - winWidth/2/v.zoomLevel),
-		int64(y/v.zoomLevel - winHeight/2/v.zoomLevel),
+	// Note that Go rounds towards zero for integer division.
+	zx := x - winWidth/2
+	rx := zx / v.zoomLevel
+	if zx < 0 && -zx%v.zoomLevel != 0 {
+		rx -= 1
 	}
+	zy := winHeight/2 - y
+	ry := zy / v.zoomLevel
+	if zy > 0 && zy%v.zoomLevel != 0 {
+		ry += 1
+	}
+	return &vect{int64(rx), int64(ry)}
 }
 
 func (v *GalaxyViewer) Init() error {
@@ -77,12 +85,18 @@ func (v *GalaxyViewer) Quit() {
 func (v *GalaxyViewer) initColorPool() {
 	v.colorPool = []sdl.Color{
 		{255, 255, 255, 255},
-		{255, 0, 0, 200},
-		{0, 255, 0, 140},
-		{0, 0, 255, 80},
-		{128, 128, 0, 40},
-		{0, 128, 128, 40},
-		{128, 0, 128, 40},
+		{223, 223, 223, 223},
+		{191, 191, 191, 191},
+		{159, 159, 159, 159},
+		{127, 127, 127, 127},
+		{95, 95, 95, 95},
+		{63, 63, 63, 63},
+		{127, 0, 0, 63},
+		{0, 127, 0, 63},
+		{0, 0, 127, 63},
+		{127, 127, 0, 31},
+		{0, 127, 127, 31},
+		{127, 0, 127, 31},
 	}
 }
 
@@ -105,6 +119,13 @@ func (v *GalaxyViewer) shouldBreak() bool {
 		}
 	}
 	return false
+}
+
+func min(a, b int32) int32 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func getZoomLevel(p [][]*vect) int32 {
@@ -131,23 +152,28 @@ func getZoomLevel(p [][]*vect) int32 {
 		}
 	}
 
-	const minZoomLevel = 1
-	const maxZoomLevel = 32
+	const minZoomLevel int32 = 1
+	const maxZoomLevel int32 = 32
 	if !found {
 		return maxZoomLevel
 	}
 
-	const minGutter = 16
-	zlX := (winWidth - minGutter) / int32(maxX-minX)
-	zlY := (winHeight - minGutter) / int32(maxY-minY)
-	zl := zlX
-	if zlY < zlX {
-		zl = zlY
+	const gutter = 16
+	zl := maxZoomLevel
+	if minX < 0 {
+		zl = min(zl, (winWidth/2-gutter)/int32(-minX))
+	}
+	if maxX > 0 {
+		zl = min(zl, (winWidth/2-gutter)/int32(maxX))
+	}
+	if minY < 0 {
+		zl = min(zl, (winHeight/2-gutter)/int32(-minY))
+	}
+	if maxY > 0 {
+		zl = min(zl, (winHeight/2-gutter)/int32(maxY))
 	}
 	if zl < minZoomLevel {
 		zl = minZoomLevel
-	} else if zl > maxZoomLevel {
-		zl = maxZoomLevel
 	}
 	return zl
 }
@@ -156,8 +182,7 @@ func (v *GalaxyViewer) drawVectors(p [][]*vect) {
 	if p == nil {
 		return
 	}
-	// v.zoomLevel = getZoomLevel(p)
-	v.zoomLevel = 3
+	v.zoomLevel = getZoomLevel(p)
 	x := make([]int16, 4, 4)
 	y := make([]int16, 4, 4)
 	for i, img := range p {

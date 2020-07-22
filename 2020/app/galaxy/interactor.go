@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"time"
 )
 
 type InterCtx struct {
@@ -23,12 +24,9 @@ func DoInteraction(ctx *InterCtx) error {
 
 	const maxIters = 1000000
 	for i := 0; i < maxIters && run; i++ {
-		// if i%10000 == 0 {
-		// 	log.Printf("Completed %d interactions.", i)
-		// }
-		log.Printf("DoInteract(): #%d", i)
-
 		click := vec2e(v)
+		t0 := time.Now()
+		log.Printf("BEGIN interact(): #%d", i)
 		state, images, err = interact(ctx, state, click)
 		if err != nil {
 			return err
@@ -38,6 +36,7 @@ func DoInteraction(ctx *InterCtx) error {
 		if err != nil {
 			return err
 		}
+		log.Printf("END interact(): #%d after %v", i, time.Since(t0))
 
 		run, v = requestClick(ctx)
 		// log.Printf("New state: %s", state)
