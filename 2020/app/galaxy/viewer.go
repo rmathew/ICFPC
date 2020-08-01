@@ -16,6 +16,7 @@ const (
 )
 
 type GalaxyViewer struct {
+	FlipY     bool
 	window    *sdl.Window
 	renderer  *sdl.Renderer
 	colorPool []sdl.Color
@@ -24,7 +25,12 @@ type GalaxyViewer struct {
 
 func (v *GalaxyViewer) vec2scr(iv *vect, x, y []int16) {
 	xx := int64(winWidth/2 + iv.x*int64(v.zoomLevel))
-	yy := int64(winHeight/2 - iv.y*int64(v.zoomLevel))
+	var yy int64
+	if v.FlipY {
+		yy = int64(winHeight/2 - iv.y*int64(v.zoomLevel))
+	} else {
+		yy = int64(winHeight/2 + iv.y*int64(v.zoomLevel))
+	}
 	if xx < 0 || yy < 0 || xx > winWidth || yy > winHeight {
 		log.Printf("ERROR: %v maps to invalid coords (%d, %d).", iv, xx, yy)
 		return
@@ -48,11 +54,22 @@ func (v *GalaxyViewer) scr2vec(x, y int32) *vect {
 	if zx < 0 && -zx%v.zoomLevel != 0 {
 		rx -= 1
 	}
-	zy := winHeight/2 - y
-	ry := zy / v.zoomLevel
-	if zy > 0 && zy%v.zoomLevel != 0 {
-		ry += 1
+
+	var zy, ry int32
+	if v.FlipY {
+		zy = winHeight/2 - y
+		ry = zy / v.zoomLevel
+		if zy > 0 && zy%v.zoomLevel != 0 {
+			ry += 1
+		}
+	} else {
+		zy = y - winHeight/2
+		ry = zy / v.zoomLevel
+		if zy < 0 && -zy%v.zoomLevel != 0 {
+			ry -= 1
+		}
 	}
+
 	return &vect{int64(rx), int64(ry)}
 }
 
@@ -154,23 +171,23 @@ func getZoomLevel(p [][]*vect) int32 {
 
 	const minZoomLevel int32 = 1
 	const maxZoomLevel int32 = 32
+	zl := maxZoomLevel
 	if !found {
-		return maxZoomLevel
+		return zl
 	}
 
 	const gutter = 16
-	zl := maxZoomLevel
 	if minX < 0 {
 		zl = min(zl, (winWidth/2-gutter)/int32(-minX))
 	}
 	if maxX > 0 {
-		zl = min(zl, (winWidth/2-gutter)/int32(maxX))
+		zl = min(zl, (winWidth/2-gutter)/int32(maxX+1))
 	}
 	if minY < 0 {
 		zl = min(zl, (winHeight/2-gutter)/int32(-minY))
 	}
 	if maxY > 0 {
-		zl = min(zl, (winHeight/2-gutter)/int32(maxY))
+		zl = min(zl, (winHeight/2-gutter)/int32(maxY+1))
 	}
 	if zl < minZoomLevel {
 		zl = minZoomLevel
@@ -195,6 +212,7 @@ func (v *GalaxyViewer) drawVectors(p [][]*vect) {
 }
 
 func (v *GalaxyViewer) requestClick() (bool, *vect) {
+	sdl.FlushEvent(sdl.MOUSEBUTTONDOWN)
 	const maxIters = 10000
 	for i := 0; i < maxIters; i++ {
 		for evt := sdl.PollEvent(); evt != nil; evt = sdl.PollEvent() {

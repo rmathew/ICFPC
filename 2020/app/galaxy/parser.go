@@ -221,6 +221,11 @@ func getTokens(d []byte) ([]token, error) {
 			if num, err := strconv.ParseInt(string(w), 10, 64); err == nil {
 				tokens = append(tokens, token{tType: tkNumber, tNum: num})
 				continue
+			} else {
+				nerr := err.(*strconv.NumError)
+				if nerr.Err == strconv.ErrRange {
+					return nil, fmt.Errorf("number %q too large", nerr.Num)
+				}
 			}
 			return nil, fmt.Errorf("unknown token %q", w)
 		}

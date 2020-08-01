@@ -2,14 +2,21 @@ package main
 
 import (
 	"flag"
+	"io/ioutil"
 	"log"
+	"strings"
 
 	"app/galaxy"
 )
 
 var bUrl = flag.String("base_url", "https://icfpc2020-api.testkontur.ru/",
-	"Base URL for the Alien Proxy server.")
-var aKey = flag.String("api_key", "", "API-key for the Alien Proxy server.")
+	"The base URL for the Alien Proxy server.")
+
+var aKeyFile = flag.String("api_key_file", "",
+	"A file containing an API-key for the Alien Proxy server.")
+
+var flipY = flag.Bool("flip_y", false,
+	"Flip the Y-axis to have the origin at bottom-left instead of top-left.")
 
 func main() {
 	flag.Parse()
@@ -26,7 +33,13 @@ func main() {
 		log.Fatalf("Unable to load & parse %q: %v", f, err)
 	}
 
-	gv := &galaxy.GalaxyViewer{}
+	var akf []byte
+	if akf, err = ioutil.ReadFile(*aKeyFile); err != nil {
+		log.Fatalf("Unable to read API-key from %q: %v", aKeyFile, err)
+	}
+	aKey := strings.TrimSpace(string(akf))
+
+	gv := &galaxy.GalaxyViewer{FlipY: *flipY}
 	if err = gv.Init(); err != nil {
 		log.Fatalf("Unable to create Galaxy Viewer: %v", err)
 	}
@@ -34,7 +47,7 @@ func main() {
 
 	ctx := &galaxy.InterCtx{
 		BaseUrl:  *bUrl,
-		ApiKey:   *aKey,
+		ApiKey:   aKey,
 		Protocol: fds,
 		Viewer:   gv,
 	}
