@@ -209,7 +209,7 @@ func sendToAliens(ctx *InterCtx, e expr) (expr, error) {
 		return nil, err
 	}
 	u.Path = "/aliens/send"
-	if len(ctx.ApiKey) > 0 {
+	if ctx.ApiKey != "" {
 		q := u.Query()
 		q.Add("apiKey", ctx.ApiKey)
 		u.RawQuery = q.Encode()

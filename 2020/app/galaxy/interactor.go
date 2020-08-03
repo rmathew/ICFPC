@@ -3,7 +3,6 @@ package galaxy
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"time"
 )
 
@@ -99,7 +98,7 @@ func interact(ctx *InterCtx, state, event expr) (expr, expr, error) {
 		st = newSt
 		ev = ar
 
-		run = !shouldBreak(ctx)
+		run = !shouldQuit(ctx)
 	}
 	return nil, nil, fmt.Errorf("incomplete after %d iterations", maxIters)
 }
@@ -154,16 +153,17 @@ func drawImages(ctx *InterCtx, imgs expr) error {
 	return nil
 }
 
-func shouldBreak(ctx *InterCtx) bool {
-	if ctx.Viewer != nil {
-		return ctx.Viewer.shouldBreak()
+func shouldQuit(ctx *InterCtx) bool {
+	if ctx.Viewer == nil {
+		return false
 	}
-	return false
+	return ctx.Viewer.getUserInput(false).quit
 }
 
 func requestClick(ctx *InterCtx) (bool, *vect) {
-	if ctx.Viewer != nil {
-		return ctx.Viewer.requestClick()
+	if ctx.Viewer == nil {
+		return true, &vect{x: 0, y: 0}
 	}
-	return true, &vect{x: int64(rand.Intn(64)), y: int64(rand.Intn(64))}
+	ui := ctx.Viewer.getUserInput(true)
+	return !ui.quit, &ui.click
 }
