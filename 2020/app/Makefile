@@ -1,6 +1,7 @@
 # A path to a file containing the interaction-protocol to be run. The default
-# is to run "galaxy.txt" obtained from:
-#     https://message-from-space.readthedocs.io/en/latest/message42.html
+# is to run "galaxy.txt" obtained from one of:
+#   https://github.com/icfpcontest2020/galaxy/tree/master/galaxy
+#   https://message-from-space.readthedocs.io/en/latest/message42.html
 IP_FILE = /extra1/ICFPC20_Probs/galaxy.txt
 
 GO_DIR = /usr/local/go

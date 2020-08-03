@@ -1,0 +1,37 @@
+My attempt, such as it was, at solving the problem for ICFPC 2020.
+
+* Information
+
+Original web-site for the contest and the task-description:
+
+    https://icfpcontest2020.github.io/
+    https://message-from-space.readthedocs.io/
+
+Alien Proxy Server hosted by the organizers and its documentation:
+
+    https://api.pegovka.space/
+    https://message-from-space.readthedocs.io/en/latest/proxy.html
+    https://api.pegovka.space/swagger
+
+Post-contest release of source-code by the organizers:
+
+    https://github.com/icfpcontest2020/galaxy/
+
+My write-up for the contest after it was over:
+
+    http://rmathew.com/2020/icfpc20.html
+
+You can find a cached copy of the task-description in "ICFPC20_Task.pdf" here.
+You can also find a snapshot of the "interaction-protocol files" in the
+archive "ICFPC20_Probs.txz" here - the "galaxy.txt" file contains the code for
+the Galaxy Simulator needed by the Galaxy Pad below.
+
+* Running The Galaxy Pad
+
+To build the Galaxy Pad UI here, you will need at least Go 1.14 and the SDL2
+library (including SDL_gfx). To run it, update "IP_FILE" in "app/Makefile" and
+then "make run" inside the "app" directory.
+
+To quit the Galaxy Pad UI, press ESC (or just close the window). To auto-inject
+mouse-clicks (e.g. while running battle-simulations), press the SPACE key;
+press the SPACE key again to disable this auto-injection.
