@@ -27,9 +27,9 @@ func modulate(n int64) string {
 		numNybbles++
 	}
 	for i := 0; i < numNybbles; i++ {
-		b.WriteByte('1')
+		b.WriteRune('1')
 	}
-	b.WriteByte('0')
+	b.WriteRune('0')
 
 	fullBits := fmt.Sprintf("%064b", ne)
 	b.WriteString(fullBits[4*(16-numNybbles):])
@@ -215,7 +215,7 @@ func sendToAliens(ctx *InterCtx, e expr) (expr, error) {
 		u.RawQuery = q.Encode()
 	}
 	us := u.String()
-	log.Printf("Sending message %q to aliens using URL %q.", msg, us)
+	log.Printf("Sending message %q to aliens using URL %q.", e, us)
 
 	var res *http.Response
 	res, err = http.Post(us, "text/plain", strings.NewReader(msg))
@@ -231,7 +231,10 @@ func sendToAliens(ctx *InterCtx, e expr) (expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	bs := string(body)
-	log.Printf("Received: %q", bs)
-	return decodeMsg([]rune(bs))
+
+	var r expr
+	if r, err = decodeMsg([]rune(string(body))); err == nil {
+		log.Printf("Received: %q", r)
+	}
+	return r, err
 }

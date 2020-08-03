@@ -4,6 +4,7 @@ package galaxy
 
 import (
 	"fmt"
+	"strings"
 )
 
 type expr interface{}
@@ -69,6 +70,15 @@ func (a *atom) String() string {
 func (a *ap) String() string {
 	if a == nil {
 		return "<<NIL ap>>"
+	}
+	if ok, _, _ := isPair(a); ok {
+		if s, err := listToStr(a); err == nil {
+			return s
+		}
+		if v, err := e2vec(a); err == nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return fmt.Sprintf("(ap %s %s)", a.fun, a.arg)
 	}
 	return fmt.Sprintf("(ap %s %s)", a.fun, a.arg)
 }
@@ -211,4 +221,51 @@ func e2vec(e expr) (*vect, error) {
 		return nil, fmt.Errorf("%v not a number in %v", e2, e)
 	}
 	return &vect{x: n1, y: n2}, nil
+}
+
+func extrList(e expr) ([]expr, error) {
+	if e == nil {
+		return nil, fmt.Errorf("NULL expression for list-extraction")
+	}
+	list := make([]expr, 0)
+	if isNil(e) {
+		return list, nil
+	}
+
+	var e1, e2 expr
+	var ok bool
+	if ok, e1, e2 = isPair(e); !ok {
+		return nil, fmt.Errorf("not a pair: %v", e)
+	}
+
+	list = append(list, e1)
+	if tailList, err := extrList(e2); err == nil {
+		return append(list, tailList...), nil
+	} else {
+		return nil, err
+	}
+}
+
+func listToStr(e expr) (string, error) {
+	var el []expr
+	var err error
+	if el, err = extrList(e); err != nil {
+		return "", err
+	}
+
+	var b strings.Builder
+	b.WriteRune('[')
+	if len(el) > 0 {
+		les := make([]string, 0, len(el))
+		for _, v := range el {
+			var s string
+			if s, err = listToStr(v); err != nil {
+				s = fmt.Sprintf("%v", v)
+			}
+			les = append(les, s)
+		}
+		b.WriteString(strings.Join(les, ", "))
+	}
+	b.WriteRune(']')
+	return b.String(), nil
 }

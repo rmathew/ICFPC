@@ -210,6 +210,8 @@ func (v *GalaxyViewer) drawVectors() {
 }
 
 func (v *GalaxyViewer) pretendUserClicked() *userInput {
+	// Pretend that the user clicked at the center of the screen - the center
+	// is necessary to auto-advance during battle-simulations.
 	v.input.click.x = 0
 	v.input.click.y = 0
 	return &v.input

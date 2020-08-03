@@ -47,6 +47,7 @@ func DoInteraction(ctx *InterCtx) error {
 
 func interact(ctx *InterCtx, state, event expr) (expr, expr, error) {
 	fds := ctx.Protocol
+	ipName := mkName(fds.ip)
 
 	st := state
 	ev := event
@@ -55,7 +56,7 @@ func interact(ctx *InterCtx, state, event expr) (expr, expr, error) {
 	for i := 0; i < maxIters && run; i++ {
 		// log.Printf("interact(): #%d", i)
 
-		e := mkAp(mkAp(mkName(fds.ip), st), ev)
+		e := mkAp(mkAp(ipName, st), ev)
 		res, err := eval(fds, e)
 		if err != nil {
 			return nil, nil, err
@@ -63,7 +64,7 @@ func interact(ctx *InterCtx, state, event expr) (expr, expr, error) {
 		// log.Printf("Result: %s", res)
 
 		var resList []expr
-		resList, err = extrList(fds, res)
+		resList, err = extrList(res)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -106,7 +107,7 @@ func interact(ctx *InterCtx, state, event expr) (expr, expr, error) {
 func extrDrawLists(fds *FuncDefs, imgs expr) ([][]*vect, error) {
 	var il []expr
 	var err error
-	if il, err = extrList(fds, imgs); err != nil {
+	if il, err = extrList(imgs); err != nil {
 		log.Printf("Error converting expr to images list: %v", err)
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func extrDrawLists(fds *FuncDefs, imgs expr) ([][]*vect, error) {
 	// log.Printf("Images-list has %d elements", len(il))
 	for i, ili := range il {
 		var vl []expr
-		if vl, err = extrList(fds, ili); err != nil {
+		if vl, err = extrList(ili); err != nil {
 			log.Printf("Error converting img[%d] to vectors: %v", i, err)
 			return nil, err
 		}
