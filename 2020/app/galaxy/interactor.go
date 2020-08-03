@@ -101,7 +101,10 @@ func interact(ctx *InterCtx, state, event expr) (expr, expr, error) {
 
 		run = !shouldQuit(ctx)
 	}
-	return nil, nil, fmt.Errorf("incomplete after %d iterations", maxIters)
+	if run {
+		return nil, nil, fmt.Errorf("incomplete after %d iterations", maxIters)
+	}
+	return nil, nil, fmt.Errorf("aborted by user")
 }
 
 func extrDrawLists(fds *FuncDefs, imgs expr) ([][]*vect, error) {

@@ -124,23 +124,23 @@ func mkPair(e1, e2 expr) expr {
 
 func eqExprs(e1, e2 expr) bool {
 	if e1 == e2 {
+		// Either both are NULL or both point to the same expression.
 		return true
 	}
 	if e1 == nil || e2 == nil {
+		// Only one of them is NULL.
 		return false
 	}
-	switch v1 := e1.(type) {
-	case *atom:
-		switch v2 := e2.(type) {
-		case *atom:
-			return v1.aType == v2.aType && v1.aNum == v2.aNum &&
-				v1.aStr == v2.aStr
+	if a1, ok := e1.(*atom); ok {
+		if a2, ok := e2.(*atom); ok {
+			return a1.aType == a2.aType && a1.aNum == a2.aNum &&
+				a1.aStr == a2.aStr
 		}
 		return false
-	case *ap:
-		switch v2 := e2.(type) {
-		case *ap:
-			return eqExprs(v1.fun, v2.fun) && eqExprs(v1.arg, v2.arg)
+	}
+	if ap1, ok := e1.(*ap); ok {
+		if ap2, ok := e2.(*ap); ok {
+			return eqExprs(ap1.fun, ap2.fun) && eqExprs(ap1.arg, ap2.arg)
 		}
 		return false
 	}
