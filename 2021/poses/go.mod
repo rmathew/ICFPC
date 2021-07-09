@@ -1,4 +1,4 @@
-module app
+module poses
 
 go 1.15
 
