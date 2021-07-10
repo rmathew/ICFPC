@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	tickMs = 100 * time.Millisecond
+	tickMs = 200 * time.Millisecond
 )
 
 func main() {
@@ -23,19 +23,53 @@ func main() {
 	}
 	log.Printf("Read problem-file %q.\n", probFile)
 
+	var tgtSol *squeeze.Pose
+	if len(os.Args) > 2 {
+		solFile := os.Args[2]
+		if tgtSol, err = squeeze.ReadSolution(solFile, prob); err != nil {
+			log.Fatalf("Unable to read solution-file %q: %v\n", solFile, err)
+		}
+		log.Printf("Read solution-file %q.\n", solFile)
+	}
+
 	v := squeeze.Viewer{}
-	if err = v.Init(); err != nil {
+	if err = v.Init(prob); err != nil {
 		log.Fatalf("Unable to create viewer: %v", err)
 	}
 	defer v.Quit()
 
-	var sol squeeze.Pose
-	sol.Vertices = prob.Figure.Vertices
-	goOn := true
-	for goOn {
-		v.UpdateView(prob, &sol)
+	var currSol *squeeze.Pose
+	if tgtSol != nil {
+		currSol = &squeeze.Pose{}
+		currSol.Vertices = make([]squeeze.Point, len(prob.Figure.Vertices))
+		copy(currSol.Vertices, prob.Figure.Vertices)
+	}
+
+	v.UpdateView(nil)
+	const maxSteps = 16
+	currStep := 0
+	ok2Cont := true
+	for ok2Cont {
+		if currStep < maxSteps && currSol != nil {
+			currStep++
+			for i, v := range currSol.Vertices {
+				deltaX := (tgtSol.Vertices[i].X - v.X) * int32(currStep) /
+					int32(maxSteps)
+				deltaY := (tgtSol.Vertices[i].Y - v.Y) * int32(currStep) /
+					int32(maxSteps)
+				currSol.Vertices[i].X += deltaX
+				currSol.Vertices[i].Y += deltaY
+			}
+			v.UpdateView(currSol)
+		} else {
+			// OK even if `tgtSol` is nil - draws the original figure then.
+			v.UpdateView(tgtSol)
+		}
 		time.Sleep(tickMs)
-		inp := v.MaybeGetUserInput()
-		goOn = !inp.Quit
+		inp, err := v.MaybeGetUserInput()
+		if err != nil {
+			log.Fatalf("Unable to get user-input: %v", err)
+		}
+		ok2Cont = !inp.Quit
 	}
 }
