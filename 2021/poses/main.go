@@ -17,19 +17,19 @@ func main() {
 		os.Exit(1)
 	}
 	probFile := os.Args[1]
+	log.Printf("Reading problem-file %q...\n", probFile)
 	prob, err := squeeze.ReadProblem(probFile)
 	if err != nil {
 		log.Fatalf("Unable to read problem-file %q: %v\n", probFile, err)
 	}
-	log.Printf("Read problem-file %q.\n", probFile)
 
 	var tgtSol *squeeze.Pose
 	if len(os.Args) > 2 {
 		solFile := os.Args[2]
+		log.Printf("Reading solution-file %q...\n", solFile)
 		if tgtSol, err = squeeze.ReadSolution(solFile, prob); err != nil {
 			log.Fatalf("Unable to read solution-file %q: %v\n", solFile, err)
 		}
-		log.Printf("Read solution-file %q.\n", solFile)
 	}
 
 	v := squeeze.Viewer{}

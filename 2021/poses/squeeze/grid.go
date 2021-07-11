@@ -3,8 +3,12 @@ package squeeze
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/veandco/go-sdl2/gfx"
+	"github.com/veandco/go-sdl2/sdl"
 	"io/ioutil"
+	"log"
 	"math"
+	"unsafe"
 )
 
 type Point struct {
@@ -25,9 +29,11 @@ type Graph struct {
 }
 
 type preProcessedInfo struct {
-	low, high         Point
-	holeLow, holeHigh Point
-	figLow, figHigh   Point
+	low, high             Point
+	holeLow, holeHigh     Point
+	figLow, figHigh       Point
+	holeWidth, holeHeight int32
+	cellsWithHoles        []bool
 }
 
 type Problem struct {
@@ -58,18 +64,146 @@ func getBounds(points []Point) (Point, Point) {
 	return minPt, maxPt
 }
 
-func preProcessProblem(prob *Problem) {
+func markHoleBorderCells(prob *Problem) {
+	pp := &prob.preProc
+	xDisp := pp.holeLow.X
+	yDisp := pp.holeLow.Y
+	hV := prob.Hole.Vertices
+	nV := len(hV)
+	for i := 0; i < nV; i++ {
+		x0, y0 := hV[i].X, hV[i].Y
+		x1, y1 := hV[(i+1)%nV].X, hV[(i+1)%nV].Y
+
+		log.Printf("Drawing from %s to %s", Point{x0, y0}, Point{x1, y1})
+		if x0 == x1 {
+			y00, y11 := min(y0, y1), max(y0, y1)
+			idx := (y00-yDisp)*pp.holeWidth + (x0 - xDisp)
+			for y := y00; y <= y11; y++ {
+				pp.cellsWithHoles[idx] = true
+				idx += pp.holeWidth
+			}
+		} else if y0 == y1 {
+			x00, x11 := min(x0, x1), max(x0, x1)
+			idx := (y0-yDisp)*pp.holeWidth + (x00 - xDisp)
+			for x := x00; x <= x11; x++ {
+				pp.cellsWithHoles[idx] = true
+				idx++
+			}
+		} else {
+			// Given the line-equation "y = a*x + c", solving for this line-
+			// segment gives "a = (y1 - y0)/(x1 - x0)" and
+			// "c = (x1*y0 - x0*y1)/(x1 - x0)". Divide-by-zeroes avoided above.
+			a := float64(y1-y0) / float64(x1-x0)
+			c := float64(x1*y0-x0*y1) / float64(x1-x0)
+			// To maximize pixel-coverage, iterate alone the horizontal or the
+			// vertical axis depending on whether the line looks wide or not.
+			if math.Abs(float64(x1-x0)) > math.Abs(float64(y1-y0)) {
+				x00, x11 := min(x0, x1), max(x0, x1)
+				for x := x00; x <= x11; x++ {
+					y := int32(math.Round(a*float64(x) + c))
+					idx := (y-yDisp)*pp.holeWidth + (x - xDisp)
+					pp.cellsWithHoles[idx] = true
+				}
+			} else {
+				y00, y11 := min(y0, y1), max(y0, y1)
+				for y := y00; y <= y11; y++ {
+					x := int32(math.Round((float64(y) - c) / a))
+					idx := (y-yDisp)*pp.holeWidth + (x - xDisp)
+					pp.cellsWithHoles[idx] = true
+				}
+			}
+		}
+	}
+}
+
+func markHoleCells(prob *Problem) error {
+	pp := &prob.preProc
+
+	// A masochistic option is to manually find the pixels for the polygon
+	// corresponding to the hole by simulating its scan-line conversion. A
+	// brute-force method is to first find the borders of the polygon, then
+	// find an interior-point, and finally flood-fill the polygon. Painful.
+	//
+	// markHoleBorderCells(prob)
+
+	// Instead of the masochistic option above, just use SDL2_gfx to find the
+	// pixels filled for the hole-polygon in a virtual surface.
+	s, err := sdl.CreateRGBSurface(
+		0, pp.holeWidth, pp.holeHeight, 32, 0, 0, 0, 0)
+	if err != nil {
+		return err
+	}
+	var r *sdl.Renderer
+	if r, err = sdl.CreateSoftwareRenderer(s); err != nil {
+		return err
+	}
+
+	if err := r.SetDrawColor(0, 0, 0, 255); err != nil {
+		return err
+	}
+	if err := r.Clear(); err != nil {
+		return err
+	}
+	x := make([]int16, len(prob.Hole.Vertices))
+	y := make([]int16, len(prob.Hole.Vertices))
+	for i, vv := range prob.Hole.Vertices {
+		x[i] = int16(vv.X - pp.holeLow.X)
+		y[i] = int16(vv.Y - pp.holeLow.Y)
+	}
+	if !gfx.FilledPolygonColor(r, x, y, sdl.Color{255, 255, 255, 255}) {
+		return fmt.Errorf("FilledPolygonColor() failed")
+	}
+
+	pixels := make([]byte, pp.holeWidth*pp.holeHeight*4)
+	err = r.ReadPixels(nil, sdl.PIXELFORMAT_ARGB8888,
+		unsafe.Pointer(&pixels[0]), int(pp.holeWidth*4))
+	if err != nil {
+		return fmt.Errorf("ReadPixels() failed")
+	}
+	pp.cellsWithHoles = make([]bool, pp.holeWidth*pp.holeHeight)
+	for i := 0; i < len(pixels); i += 4 {
+		pp.cellsWithHoles[i/4] = pixels[i+1] == 255
+	}
+
+	if err := r.Destroy(); err != nil {
+		return err
+	}
+	s.Free()
+	return nil
+}
+
+func isHoleCell(prob *Problem, pt Point) bool {
+	pp := &prob.preProc
+	if pt.X < pp.holeLow.X || pt.X > pp.holeHigh.X {
+		return false
+	}
+	if pt.Y < pp.holeLow.Y || pt.Y > pp.holeHigh.Y {
+		return false
+	}
+	idx := (pt.Y-pp.holeLow.Y)*pp.holeWidth + (pt.X - pp.holeLow.X)
+	return pp.cellsWithHoles[idx]
+}
+
+func preProcessProblem(prob *Problem) error {
 	pp := &prob.preProc
 	pp.holeLow, pp.holeHigh = getBounds(prob.Hole.Vertices)
+	pp.holeWidth = pp.holeHigh.X - pp.holeLow.X + 1
+	pp.holeHeight = pp.holeHigh.Y - pp.holeLow.Y + 1
 	pp.figLow, pp.figHigh = getBounds(prob.Figure.Vertices)
 	pp.low.X = min(pp.holeLow.X, pp.figLow.X)
 	pp.low.Y = min(pp.holeLow.Y, pp.figLow.Y)
 	pp.high.X = max(pp.holeHigh.X, pp.figHigh.X)
 	pp.high.Y = max(pp.holeHigh.Y, pp.figHigh.Y)
-	// DEBUG
-	fmt.Printf("BOUNDS: min=%s max=%s\n", pp.low, pp.high)
-	fmt.Printf("HOLE_BOUNDS: min=%s max=%s\n", pp.holeLow, pp.holeHigh)
-	fmt.Printf("FIGURE_BOUNDS: min=%s max=%s\n", pp.figLow, pp.figHigh)
+
+	if err := markHoleCells(prob); err != nil {
+		return err
+	}
+
+	log.Printf("Overall bounds: min=%s max=%s\n", pp.low, pp.high)
+	log.Printf("Hole bounds: min=%s max=%s\n", pp.holeLow, pp.holeHigh)
+	log.Printf("Figure bounds: min=%s max=%s\n", pp.figLow, pp.figHigh)
+
+	return nil
 }
 
 func ReadProblem(pFile string) (*Problem, error) {
@@ -127,7 +261,9 @@ func ReadProblem(pFile string) (*Problem, error) {
 			return nil, fmt.Errorf("unknown top-level JSON-key %q", k)
 		}
 	}
-	preProcessProblem(&prob)
+	if err := preProcessProblem(&prob); err != nil {
+		return nil, err
+	}
 	return &prob, nil
 }
 

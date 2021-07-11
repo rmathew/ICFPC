@@ -18,10 +18,11 @@ type UserInput struct {
 }
 
 type Viewer struct {
-	window   *sdl.Window
-	renderer *sdl.Renderer
-	zoom     float64
-	input    UserInput
+	window       *sdl.Window
+	renderer     *sdl.Renderer
+	viewPortHigh Point
+	zoom         float64
+	input        UserInput
 
 	prob *Problem
 	sol  *Pose
@@ -38,14 +39,14 @@ func (v *Viewer) maybeDrawGrid() {
 		return
 	}
 	gridColor := sdl.Color{210, 210, 210, 255}
-	for x := int32(0); x <= v.prob.preProc.high.X; x++ {
+	for x := int32(0); x <= v.viewPortHigh.X; x++ {
 		xx, y0 := v.pt2scr(Point{x, 0})
-		_, y1 := v.pt2scr(Point{x, v.prob.preProc.high.Y})
+		_, y1 := v.pt2scr(Point{x, v.viewPortHigh.Y})
 		gfx.VlineColor(v.renderer, xx, y0, y1, gridColor)
 	}
-	for y := int32(0); y <= v.prob.preProc.high.Y; y++ {
+	for y := int32(0); y <= v.viewPortHigh.Y; y++ {
 		x0, yy := v.pt2scr(Point{0, y})
-		x1, _ := v.pt2scr(Point{v.prob.preProc.high.X, y})
+		x1, _ := v.pt2scr(Point{v.viewPortHigh.X, y})
 		gfx.HlineColor(v.renderer, x0, x1, yy, gridColor)
 	}
 }
@@ -54,6 +55,7 @@ func (v *Viewer) drawProblem() {
 	if v.prob == nil {
 		return
 	}
+
 	x := make([]int16, len(v.prob.Hole.Vertices))
 	y := make([]int16, len(v.prob.Hole.Vertices))
 	for i, vv := range v.prob.Hole.Vertices {
@@ -62,6 +64,31 @@ func (v *Viewer) drawProblem() {
 		y[i] = int16(yy)
 	}
 	gfx.FilledPolygonColor(v.renderer, x, y, sdl.Color{0, 0, 0, 255})
+
+	/*
+		// Comment out the above section and uncomment this one to visually check
+		// if the hole-cells are being correctly identified.
+		x := make([]int16, 4, 4)
+		y := make([]int16, 4, 4)
+		d := int16(v.zoom)
+		pp := &v.prob.preProc
+		for i := pp.holeLow.X; i <= pp.holeHigh.X; i++ {
+			for j := pp.holeLow.Y; j <= pp.holeHigh.Y; j++ {
+				if !isHoleCell(v.prob, Point{i, j}) {
+					continue
+				}
+				x[0] = int16(padding + float64(i)*v.zoom)
+				y[0] = int16(padding + float64(j)*v.zoom)
+				x[1] = x[0] + d
+				y[1] = y[0]
+				x[2] = x[0] + d
+				y[2] = y[0] + d
+				x[3] = x[0]
+				y[3] = y[0] + d
+				gfx.FilledPolygonColor(v.renderer, x, y, sdl.Color{0, 0, 0, 255})
+			}
+		}
+	*/
 }
 
 func (v *Viewer) drawSolution(newSol *Pose) {
@@ -86,14 +113,17 @@ func (v *Viewer) drawSolution(newSol *Pose) {
 	}
 }
 
-func (v *Viewer) updateZoom() error {
-	maxX := v.prob.preProc.high.X
-	maxY := v.prob.preProc.high.Y
+func (v *Viewer) updateZoom() {
+	const marginFactor = 1.1
+	maxX := float64(v.prob.preProc.high.X) * marginFactor
+	maxY := float64(v.prob.preProc.high.Y) * marginFactor
+	v.viewPortHigh.X = int32(maxX)
+	v.viewPortHigh.Y = int32(maxY)
 
-	v.zoom = 16
-	v.zoom = math.Min(v.zoom, float64(scrWidth-2*padding)/float64(maxX+1))
-	v.zoom = math.Min(v.zoom, float64(scrHeight-2*padding)/float64(maxY+1))
-	return nil
+	const maxZoom = 16
+	v.zoom = maxZoom
+	v.zoom = math.Min(v.zoom, float64(scrWidth-2*padding)/(maxX+1))
+	v.zoom = math.Min(v.zoom, float64(scrHeight-2*padding)/(maxY+1))
 }
 
 func (v *Viewer) UpdateView(sol *Pose) {
@@ -118,9 +148,7 @@ func (v *Viewer) Init(prob *Problem) error {
 	}
 	v.renderer, err = sdl.CreateRenderer(v.window, -1, sdl.RENDERER_ACCELERATED)
 	v.prob = prob
-	if err = v.updateZoom(); err != nil {
-		return err
-	}
+	v.updateZoom()
 	v.UpdateView(nil)
 	return nil
 }
@@ -141,9 +169,7 @@ func (v *Viewer) MaybeGetUserInput() (*UserInput, error) {
 		case *sdl.WindowEvent:
 			if t.Event == sdl.WINDOWEVENT_RESIZED ||
 				t.Event == sdl.WINDOWEVENT_EXPOSED {
-				if err := v.updateZoom(); err != nil {
-					return nil, err
-				}
+				v.updateZoom()
 				v.UpdateView(nil)
 			}
 		case *sdl.KeyboardEvent:
