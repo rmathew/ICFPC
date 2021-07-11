@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	tickMs = 200 * time.Millisecond
+	tickMs = 300 * time.Millisecond
 )
 
 func main() {

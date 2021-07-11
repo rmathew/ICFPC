@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 )
 
 type Point struct {
@@ -23,14 +24,52 @@ type Graph struct {
 	Edges    []Line
 }
 
+type preProcessedInfo struct {
+	low, high         Point
+	holeLow, holeHigh Point
+	figLow, figHigh   Point
+}
+
 type Problem struct {
 	Hole    Polygon
 	Figure  Graph
 	Epsilon int32
+
+	preProc preProcessedInfo
 }
 
 type Pose struct {
 	Vertices []Point
+}
+
+func (p Point) String() string {
+	return fmt.Sprintf("(%d, %d)", p.X, p.Y)
+}
+
+func getBounds(points []Point) (Point, Point) {
+	minPt := Point{math.MaxInt32, math.MaxInt32}
+	maxPt := Point{math.MinInt32, math.MinInt32}
+	for _, p := range points {
+		minPt.X = min(minPt.X, p.X)
+		minPt.Y = min(minPt.Y, p.Y)
+		maxPt.X = max(maxPt.X, p.X)
+		maxPt.Y = max(maxPt.Y, p.Y)
+	}
+	return minPt, maxPt
+}
+
+func preProcessProblem(prob *Problem) {
+	pp := &prob.preProc
+	pp.holeLow, pp.holeHigh = getBounds(prob.Hole.Vertices)
+	pp.figLow, pp.figHigh = getBounds(prob.Figure.Vertices)
+	pp.low.X = min(pp.holeLow.X, pp.figLow.X)
+	pp.low.Y = min(pp.holeLow.Y, pp.figLow.Y)
+	pp.high.X = max(pp.holeHigh.X, pp.figHigh.X)
+	pp.high.Y = max(pp.holeHigh.Y, pp.figHigh.Y)
+	// DEBUG
+	fmt.Printf("BOUNDS: min=%s max=%s\n", pp.low, pp.high)
+	fmt.Printf("HOLE_BOUNDS: min=%s max=%s\n", pp.holeLow, pp.holeHigh)
+	fmt.Printf("FIGURE_BOUNDS: min=%s max=%s\n", pp.figLow, pp.figHigh)
 }
 
 func ReadProblem(pFile string) (*Problem, error) {
@@ -82,10 +121,13 @@ func ReadProblem(pFile string) (*Problem, error) {
 			}
 		case "epsilon":
 			prob.Epsilon = int32(v.(float64))
+		case "bonuses":
+			// TODO: Parse and use bonuses.
 		default:
 			return nil, fmt.Errorf("unknown top-level JSON-key %q", k)
 		}
 	}
+	preProcessProblem(&prob)
 	return &prob, nil
 }
 

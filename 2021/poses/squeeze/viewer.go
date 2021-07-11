@@ -1,7 +1,6 @@
 package squeeze
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/veandco/go-sdl2/gfx"
@@ -9,8 +8,9 @@ import (
 )
 
 const (
-	winWidth  = 1024
-	winHeight = 768
+	scrWidth  = 1024
+	scrHeight = 768
+	padding   = 8
 )
 
 type UserInput struct {
@@ -18,13 +18,36 @@ type UserInput struct {
 }
 
 type Viewer struct {
-	window    *sdl.Window
-	renderer  *sdl.Renderer
-	zoomLevel int32
-	input     UserInput
+	window   *sdl.Window
+	renderer *sdl.Renderer
+	zoom     float64
+	input    UserInput
 
 	prob *Problem
 	sol  *Pose
+}
+
+func (v *Viewer) pt2scr(p Point) (int32, int32) {
+	x := int32(padding + float64(p.X)*v.zoom)
+	y := int32(padding + float64(p.Y)*v.zoom)
+	return x, y
+}
+
+func (v *Viewer) maybeDrawGrid() {
+	if v.zoom < 6 {
+		return
+	}
+	gridColor := sdl.Color{210, 210, 210, 255}
+	for x := int32(0); x <= v.prob.preProc.high.X; x++ {
+		xx, y0 := v.pt2scr(Point{x, 0})
+		_, y1 := v.pt2scr(Point{x, v.prob.preProc.high.Y})
+		gfx.VlineColor(v.renderer, xx, y0, y1, gridColor)
+	}
+	for y := int32(0); y <= v.prob.preProc.high.Y; y++ {
+		x0, yy := v.pt2scr(Point{0, y})
+		x1, _ := v.pt2scr(Point{v.prob.preProc.high.X, y})
+		gfx.HlineColor(v.renderer, x0, x1, yy, gridColor)
+	}
 }
 
 func (v *Viewer) drawProblem() {
@@ -34,8 +57,9 @@ func (v *Viewer) drawProblem() {
 	x := make([]int16, len(v.prob.Hole.Vertices))
 	y := make([]int16, len(v.prob.Hole.Vertices))
 	for i, vv := range v.prob.Hole.Vertices {
-		x[i] = int16(vv.X * v.zoomLevel)
-		y[i] = int16(vv.Y * v.zoomLevel)
+		xx, yy := v.pt2scr(vv)
+		x[i] = int16(xx)
+		y[i] = int16(yy)
 	}
 	gfx.FilledPolygonColor(v.renderer, x, y, sdl.Color{0, 0, 0, 255})
 }
@@ -54,63 +78,28 @@ func (v *Viewer) drawSolution(newSol *Pose) {
 		verts = v.sol.Vertices
 	}
 	const lineWidth int32 = 3
+	lineColor := sdl.Color{255, 0, 0, 255}
 	for _, e := range v.prob.Figure.Edges {
-		x0 := int32(verts[e.StartIdx].X * v.zoomLevel)
-		y0 := int32(verts[e.StartIdx].Y * v.zoomLevel)
-		x1 := int32(verts[e.EndIdx].X * v.zoomLevel)
-		y1 := int32(verts[e.EndIdx].Y * v.zoomLevel)
-		gfx.ThickLineColor(v.renderer, x0, y0, x1, y1, lineWidth,
-			sdl.Color{255, 0, 0, 255})
+		x0, y0 := v.pt2scr(verts[e.StartIdx])
+		x1, y1 := v.pt2scr(verts[e.EndIdx])
+		gfx.ThickLineColor(v.renderer, x0, y0, x1, y1, lineWidth, lineColor)
 	}
 }
 
-func min(a, b int32) int32 {
-	if a < b {
-		return a
-	}
-	return b
-}
+func (v *Viewer) updateZoom() error {
+	maxX := v.prob.preProc.high.X
+	maxY := v.prob.preProc.high.Y
 
-func max(a, b int32) int32 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func (v *Viewer) updateZoomLevel() error {
-	var maxX int32 = math.MinInt32
-	var maxY int32 = math.MinInt32
-	for _, vv := range v.prob.Hole.Vertices {
-		maxX = max(maxX, vv.X)
-		maxY = max(maxY, vv.Y)
-	}
-	for _, fv := range v.prob.Figure.Vertices {
-		maxX = max(maxX, fv.X)
-		maxY = max(maxY, fv.Y)
-	}
-	if maxX > winWidth {
-		return fmt.Errorf(
-			"max X (%d) more than screen-width (%d)", maxX, winWidth)
-	}
-	if maxY > winHeight {
-		return fmt.Errorf(
-			"max Y (%d) more than screen-height (%d)", maxY, winHeight)
-	}
-
-	const minZoomLevel int32 = 1
-	const maxZoomLevel int32 = 16
-	const gutter int32 = 8
-	zl := maxZoomLevel
-	zl = min(zl, (winWidth-2*gutter)/(maxX+1))
-	zl = min(zl, (winHeight-2*gutter)/(maxY+1))
-	v.zoomLevel = max(zl, minZoomLevel)
+	v.zoom = 16
+	v.zoom = math.Min(v.zoom, float64(scrWidth-2*padding)/float64(maxX+1))
+	v.zoom = math.Min(v.zoom, float64(scrHeight-2*padding)/float64(maxY+1))
 	return nil
 }
 
 func (v *Viewer) UpdateView(sol *Pose) {
 	v.renderer.SetDrawColor(230, 224, 195, 255)
 	v.renderer.Clear()
+	v.maybeDrawGrid()
 	v.drawProblem()
 	v.drawSolution(sol)
 	v.renderer.Present()
@@ -122,14 +111,14 @@ func (v *Viewer) Init(prob *Problem) error {
 		return err
 	}
 	v.window, err = sdl.CreateWindow("Hole In The Wall Viewer (ICFPC 2021)",
-		sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, winWidth, winHeight,
+		sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, scrWidth, scrHeight,
 		sdl.WINDOW_SHOWN)
 	if err != nil {
 		return err
 	}
 	v.renderer, err = sdl.CreateRenderer(v.window, -1, sdl.RENDERER_ACCELERATED)
 	v.prob = prob
-	if err = v.updateZoomLevel(); err != nil {
+	if err = v.updateZoom(); err != nil {
 		return err
 	}
 	v.UpdateView(nil)
@@ -152,7 +141,7 @@ func (v *Viewer) MaybeGetUserInput() (*UserInput, error) {
 		case *sdl.WindowEvent:
 			if t.Event == sdl.WINDOWEVENT_RESIZED ||
 				t.Event == sdl.WINDOWEVENT_EXPOSED {
-				if err := v.updateZoomLevel(); err != nil {
+				if err := v.updateZoom(); err != nil {
 					return nil, err
 				}
 				v.UpdateView(nil)
