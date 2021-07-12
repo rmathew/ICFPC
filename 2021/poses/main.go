@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-var inpSol = flag.String("inp-sol", "", "file for reading in a solution")
-var outSol = flag.String("out-sol", "", "file for writing out the best solution")
+var inpSol = flag.String("inpsol", "", "file for reading in a saved solution")
+var outSol = flag.String("outsol", "", "file for writing out the best solution")
 
 type bestSol struct {
 	sol   *squeeze.Pose
@@ -47,12 +47,12 @@ func maybeReadSolution(prob *squeeze.Problem) (*squeeze.Pose, error) {
 func maybeWriteBestSol(best *bestSol, sol *squeeze.Pose,
 	prob *squeeze.Problem) error {
 	d := squeeze.GetDislikes(sol, prob)
-	vs := "INVALID"
+	vs := "Have an INVALID"
 	ok := squeeze.IsValidSolution(sol, prob)
 	if ok {
-		vs = "valid"
+		vs = "Found a valid"
 	}
-	log.Printf("Found %s solution with dislikes=%d", vs, d)
+	log.Printf("%s solution with dislikes=%d", vs, d)
 	if !ok || d > best.score {
 		return nil
 	}

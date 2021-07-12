@@ -29,9 +29,10 @@ type tgtSolSolver struct {
 type annealer struct {
 	prob *Problem
 
-	foundSol bool
-	currSol  *Pose
-	currTemp float64
+	foundSol   bool
+	currSol    *Pose
+	currTemp   float64
+	kBoltzmann float64
 }
 
 func (t *tgtSolSolver) Reset() {
@@ -123,8 +124,29 @@ func (a *annealer) randomlyRotate(sol *Pose) {
 	}
 }
 
-func (a *annealer) randomlyShear(sol *Pose) {
-	// TODO: Flesh this out.
+func (a *annealer) randomlyTugOnPoints(sol *Pose) {
+	low, high := getBounds(sol.Vertices)
+	xW, yH := high.X-low.X, high.Y-low.Y
+
+	// Up to 5% jitter up/down and right/left, but by at least 1 cell.
+	const maxJitterPct float64 = 0.05
+	maxDispX := max(1, int32(maxJitterPct*float64(xW)))
+	maxDispY := max(1, int32(maxJitterPct*float64(yH)))
+	const maxAttempts = 10
+	for i := 0; i < maxAttempts; i++ {
+		vIdx := rand.Intn(len(sol.Vertices))
+		ovX, ovY := sol.Vertices[vIdx].X, sol.Vertices[vIdx].Y
+
+		nvX := ovX + int32((2.0*rand.Float64()-1.0)*float64(maxDispX))
+		nvY := ovY + int32((2.0*rand.Float64()-1.0)*float64(maxDispY))
+		if nvX < 0 || nvY < 0 {
+			continue
+		}
+		sol.Vertices[vIdx].X, sol.Vertices[vIdx].Y = nvX, nvY
+		if !isVertexAllowed(sol, vIdx, a.prob) {
+			sol.Vertices[vIdx].X, sol.Vertices[vIdx].Y = ovX, ovY
+		}
+	}
 }
 
 func (a *annealer) getCandidateSol() *Pose {
@@ -132,13 +154,13 @@ func (a *annealer) getCandidateSol() *Pose {
 	nSol.Vertices = make([]Point, len(a.currSol.Vertices))
 	copy(nSol.Vertices, a.currSol.Vertices)
 
-	switch rand.Int() % 3 {
+	switch rand.Intn(3) {
 	case 0:
 		a.randomlyTranslate(&nSol)
 	case 1:
 		a.randomlyRotate(&nSol)
 	case 2:
-		a.randomlyShear(&nSol)
+		a.randomlyTugOnPoints(&nSol)
 	}
 	return &nSol
 }
@@ -149,11 +171,8 @@ func (a *annealer) shouldSwitchSol(c0, c1 cost) bool {
 	} else if c1 == c0 {
 		return false
 	}
-	// TODO: Determine a suitable value for this normalization constant.
-	// Ideally it should give a 50% probability at the highest temperature.
-	const kBoltzmann float64 = 1.0
 	// Note that c0 - c1 is negative here.
-	return math.Exp(float64(c0-c1)/(kBoltzmann*a.currTemp)) > rand.Float64()
+	return math.Exp(float64(c0-c1)/(a.kBoltzmann*a.currTemp)) > rand.Float64()
 }
 
 func (a *annealer) Reset() {
@@ -164,6 +183,9 @@ func (a *annealer) Reset() {
 	a.foundSol = false
 	a.currSol = &s
 	a.currTemp = 1.0
+	// TODO: Determine a suitable value for this normalization constant.
+	// Ideally it should give a 50% probability at the highest temperature.
+	a.kBoltzmann = 1.0
 
 	// Remove this to get a deterministic solution for a problem.
 	rand.Seed(time.Now().UnixNano() % math.MaxInt32)
@@ -176,7 +198,7 @@ func (a *annealer) GetNextSolution() *Pose {
 
 	initCost := a.solCost(a.currSol)
 	currCost := initCost
-	const itersPerTemp = 100
+	const itersPerTemp = 10000
 	for i := 0; i < itersPerTemp; i++ {
 		nSol := a.getCandidateSol()
 		nCost := a.solCost(nSol)
@@ -186,7 +208,7 @@ func (a *annealer) GetNextSolution() *Pose {
 		}
 	}
 	// TODO: Determine a suitable value for this decay factor.
-	const tempDecayFactor = 0.96
+	const tempDecayFactor = 0.98
 	a.currTemp *= tempDecayFactor
 
 	if currCost == initCost {

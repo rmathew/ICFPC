@@ -11,6 +11,10 @@ import (
 	"unsafe"
 )
 
+const (
+	epsilonScale float64 = 1000000.0
+)
+
 type Point struct {
 	X, Y int32
 }
@@ -28,18 +32,26 @@ type Graph struct {
 	Edges    []Line
 }
 
+type figVertEdgeInfo struct {
+	idx              int
+	minDist, maxDist int32
+}
+
 type preProcessedInfo struct {
 	low, high             Point
 	holeLow, holeHigh     Point
 	figLow, figHigh       Point
 	holeWidth, holeHeight int32
 	cellsWithHoles        []bool
+
+	minEdgeScale, maxEdgeScale float64
+	figVertEdges               [][]figVertEdgeInfo
 }
 
 type Problem struct {
 	Hole    Polygon
 	Figure  Graph
-	Epsilon int32
+	Epsilon float64
 
 	preProc preProcessedInfo
 }
@@ -253,11 +265,50 @@ func preProcessProblem(prob *Problem) error {
 		return err
 	}
 
-	log.Printf("Overall bounds: min=%s max=%s\n", pp.low, pp.high)
-	log.Printf("Hole bounds: min=%s max=%s\n", pp.holeLow, pp.holeHigh)
-	log.Printf("Figure bounds: min=%s max=%s\n", pp.figLow, pp.figHigh)
+	pp.minEdgeScale = (epsilonScale - prob.Epsilon) / epsilonScale
+	pp.maxEdgeScale = (epsilonScale + prob.Epsilon) / epsilonScale
+
+	pp.figVertEdges = make([][]figVertEdgeInfo, len(prob.Figure.Vertices))
+	for i := 0; i < len(prob.Figure.Vertices); i++ {
+		pp.figVertEdges[i] = make([]figVertEdgeInfo, 0,
+			len(prob.Figure.Vertices)-1)
+	}
+	for _, e := range prob.Figure.Edges {
+		pi, qi := e.StartIdx, e.EndIdx
+		p := prob.Figure.Vertices[pi]
+		q := prob.Figure.Vertices[qi]
+		dist := (p.X-q.X)*(p.X-q.X) + (p.Y-q.Y)*(p.Y-q.Y)
+		minDist := int32(pp.minEdgeScale * float64(dist))
+		maxDist := int32(pp.maxEdgeScale * float64(dist))
+
+		pei := figVertEdgeInfo{qi, minDist, maxDist}
+		pp.figVertEdges[pi] = append(pp.figVertEdges[pi], pei)
+
+		qei := figVertEdgeInfo{pi, minDist, maxDist}
+		pp.figVertEdges[qi] = append(pp.figVertEdges[qi], qei)
+	}
+
+	log.Printf("Overall bounds: min=%s max=%s", pp.low, pp.high)
+	log.Printf("Hole bounds: min=%s max=%s", pp.holeLow, pp.holeHigh)
+	log.Printf("Figure bounds: min=%s max=%s", pp.figLow, pp.figHigh)
+	log.Printf("Stretchability: %f -> %f", pp.minEdgeScale, pp.maxEdgeScale)
 
 	return nil
+}
+
+func isVertexAllowed(sol *Pose, idx int, prob *Problem) bool {
+	if idx < 0 || idx >= len(sol.Vertices) {
+		return false
+	}
+	vX, vY := sol.Vertices[idx].X, sol.Vertices[idx].Y
+	for _, u := range prob.preProc.figVertEdges[idx] {
+		uX, uY := sol.Vertices[u.idx].X, sol.Vertices[u.idx].Y
+		dist := (vX-uX)*(vX-uX) + (vY-uY)*(vY-uY)
+		if dist < u.minDist || dist > u.maxDist {
+			return false
+		}
+	}
+	return true
 }
 
 func ReadProblem(pFile string) (*Problem, error) {
@@ -308,7 +359,7 @@ func ReadProblem(pFile string) (*Problem, error) {
 				}
 			}
 		case "epsilon":
-			prob.Epsilon = int32(v.(float64))
+			prob.Epsilon = v.(float64)
 		case "bonuses":
 			// TODO: Parse and use bonuses.
 		default:
@@ -390,7 +441,11 @@ func IsValidSolution(sol *Pose, prob *Problem) bool {
 			}
 		}
 	}
-	// TODO: Check epsilon-based constraints.
+	for i, _ := range sol.Vertices {
+		if !isVertexAllowed(sol, i, prob) {
+			return false
+		}
+	}
 	return true
 }
 
