@@ -106,10 +106,10 @@ func segmentsIntersect(p1, q1, p2, q2 Point) bool {
 	return false
 }
 
-func getBounds(points []Point) (Point, Point) {
+func getBounds(pts []Point) (Point, Point) {
 	minPt := Point{math.MaxInt32, math.MaxInt32}
 	maxPt := Point{math.MinInt32, math.MinInt32}
-	for _, p := range points {
+	for _, p := range pts {
 		minPt.X = min(minPt.X, p.X)
 		minPt.Y = min(minPt.Y, p.Y)
 		maxPt.X = max(maxPt.X, p.X)
@@ -226,7 +226,7 @@ func markHoleCells(prob *Problem) error {
 	return nil
 }
 
-func isHoleCell(prob *Problem, pt Point) bool {
+func isHoleCell(pt Point, prob *Problem) bool {
 	pp := &prob.preProc
 	if pt.X < pp.holeLow.X || pt.X > pp.holeHigh.X {
 		return false
@@ -347,18 +347,34 @@ func ReadSolution(sFile string, prob *Problem) (*Pose, error) {
 			return nil, fmt.Errorf("unknown pose-level JSON-key %q", k)
 		}
 	}
-	if !IsValidPose(&sol, prob) {
-		return nil, fmt.Errorf("invalid pose for problem")
+	if !IsValidSolution(&sol, prob) {
+		return nil, fmt.Errorf("invalid solution for problem")
 	}
 	return &sol, nil
 }
 
-func IsValidPose(sol *Pose, prob *Problem) bool {
-	if prob == nil || sol == nil {
-		return true
+func IsValidSolution(sol *Pose, prob *Problem) bool {
+	if len(sol.Vertices) != len(prob.Figure.Vertices) {
+		return false
+	}
+	for _, sv := range sol.Vertices {
+		if isHoleCell(sv, prob) {
+			return false
+		}
+	}
+	hV := prob.Hole.Vertices
+	nV := len(hV)
+	for _, e := range prob.Figure.Edges {
+		p1, q1 := sol.Vertices[e.StartIdx], sol.Vertices[e.EndIdx]
+		for i, p2 := range hV {
+			q2 := hV[(i+1)%nV]
+			if segmentsIntersect(p1, q1, p2, q2) {
+				return false
+			}
+		}
 	}
 	// TODO: Check epsilon-based constraints.
-	return len(sol.Vertices) == len(prob.Figure.Vertices)
+	return true
 }
 
 func GetDislikes(sol *Pose, prob *Problem) int32 {

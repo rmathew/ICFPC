@@ -46,7 +46,7 @@ func main() {
 	}
 
 	solver := squeeze.NewSolver(prob, tgtSol)
-	solver.InitSolver()
+	solver.Reset()
 
 	v := squeeze.Viewer{}
 	if err = v.Init(prob); err != nil {
@@ -58,14 +58,18 @@ func main() {
 	var inp *squeeze.UserInput
 	gotIt := false
 	ok2Cont := true
+	run := false
 	for ok2Cont {
 		t0 := time.Now()
-		sol := solver.GetNextSolution()
-		v.UpdateView(sol)
-		if !gotIt && solver.WasFinalSolution() {
-			d := squeeze.GetDislikes(sol, prob)
-			log.Printf("Found a solution with dislikes: %d", d)
-			gotIt = true
+		if run {
+			sol := solver.GetNextSolution()
+			v.UpdateView(sol)
+			if !gotIt && solver.WasFinalSolution() {
+				d := squeeze.GetDislikes(sol, prob)
+				ok := squeeze.IsValidSolution(sol, prob)
+				log.Printf("Found valid=%v solution with dislikes=%d", ok, d)
+				gotIt = true
+			}
 		}
 
 		const tickMs = 300 * time.Millisecond
@@ -77,6 +81,12 @@ func main() {
 			log.Fatalf("Unable to get user-input: %v", err)
 		}
 		ok2Cont = !inp.Quit
+		run = inp.Run
+		if inp.Reset {
+			solver.Reset()
+			v.UpdateView(nil)
+			gotIt = false
+		}
 	}
 
 	if !gotIt {

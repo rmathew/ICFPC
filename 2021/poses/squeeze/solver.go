@@ -1,11 +1,19 @@
 package squeeze
 
-const (
-	maxInterpolationSteps int32 = 16
+import (
+	"math"
+	"math/rand"
+	"time"
 )
 
+const (
+	maxInterpolationSteps = 16
+)
+
+type cost int32
+
 type Solver interface {
-	InitSolver()
+	Reset()
 	GetNextSolution() *Pose
 	WasFinalSolution() bool
 }
@@ -15,19 +23,21 @@ type tgtSolSolver struct {
 	tgtSol *Pose
 
 	currSol  Pose
-	currStep int32
+	currStep int
 }
 
 type annealer struct {
 	prob *Problem
 
-	sol      Pose
+	foundSol bool
+	currSol  *Pose
 	currTemp float64
 }
 
-func (t *tgtSolSolver) InitSolver() {
+func (t *tgtSolSolver) Reset() {
 	t.currSol.Vertices = make([]Point, len(t.prob.Figure.Vertices))
 	copy(t.currSol.Vertices, t.prob.Figure.Vertices)
+	t.currStep = 0
 }
 
 func (t *tgtSolSolver) GetNextSolution() *Pose {
@@ -36,13 +46,12 @@ func (t *tgtSolSolver) GetNextSolution() *Pose {
 	}
 
 	t.currStep++
+	fracDone := float64(t.currStep) / float64(maxInterpolationSteps)
 	for i, v := range t.currSol.Vertices {
-		deltaX := (t.tgtSol.Vertices[i].X - v.X) * t.currStep /
-			maxInterpolationSteps
-		deltaY := (t.tgtSol.Vertices[i].Y - v.Y) * t.currStep /
-			maxInterpolationSteps
-		t.currSol.Vertices[i].X += deltaX
-		t.currSol.Vertices[i].Y += deltaY
+		deltaX := float64(t.tgtSol.Vertices[i].X-v.X) * fracDone
+		deltaY := float64(t.tgtSol.Vertices[i].Y-v.Y) * fracDone
+		t.currSol.Vertices[i].X += int32(deltaX)
+		t.currSol.Vertices[i].Y += int32(deltaY)
 	}
 	return &t.currSol
 }
@@ -51,21 +60,107 @@ func (t *tgtSolSolver) WasFinalSolution() bool {
 	return t.currStep >= maxInterpolationSteps
 }
 
-func (a *annealer) InitSolver() {
-	a.sol.Vertices = make([]Point, len(a.prob.Figure.Vertices))
-	copy(a.sol.Vertices, a.prob.Figure.Vertices)
+func (a *annealer) solCost(sol *Pose) cost {
+	c := cost(GetDislikes(sol, a.prob))
+	if !IsValidSolution(sol, a.prob) {
+		return c + cost(math.MaxInt32/2)
+	}
+	return c
+}
 
+func (a *annealer) randomlyTranslate(sol *Pose) {
+	low, high := getBounds(sol.Vertices)
+	xW, yH := high.X-low.X, high.Y-low.Y
+
+	// Up to 1% jitter up/down and right/left, but by at least 1 cell.
+	const jitterPct float64 = 0.01
+	maxDispX := max(1, int32(jitterPct*float64(xW)))
+	maxDispY := max(1, int32(jitterPct*float64(yH)))
+	xBase, yBase := max(0, low.X-maxDispX), max(0, low.Y-maxDispY)
+	xDisp := xBase + int32(2.0*rand.Float64()*float64(maxDispX)) - low.X
+	yDisp := yBase + int32(2.0*rand.Float64()*float64(maxDispY)) - low.Y
+
+	for i, _ := range sol.Vertices {
+		sol.Vertices[i].X += xDisp
+		sol.Vertices[i].Y += yDisp
+	}
+}
+
+func (a *annealer) randomlyRotate(sol *Pose) {
+	// TODO: Flesh this out.
+}
+
+func (a *annealer) randomlyShear(sol *Pose) {
+	// TODO: Flesh this out.
+}
+
+func (a *annealer) getCandidateSol() *Pose {
+	var nSol Pose
+	nSol.Vertices = make([]Point, len(a.currSol.Vertices))
+	copy(nSol.Vertices, a.currSol.Vertices)
+
+	switch rand.Int() % 3 {
+	case 0:
+		a.randomlyTranslate(&nSol)
+	case 1:
+		a.randomlyRotate(&nSol)
+	case 2:
+		a.randomlyShear(&nSol)
+	}
+	return &nSol
+}
+
+func (a *annealer) switchSol(c0, c1 cost) bool {
+	if c1 < c0 {
+		return true
+	}
+	// TODO: Determine a suitable value for this normalization constant.
+	const kB float64 = 1.0
+	// Note that c0 - c1 is 0 or -ve.
+	return math.Exp(float64(c0-c1)/(kB*a.currTemp)) > rand.Float64()
+}
+
+func (a *annealer) Reset() {
+	s := Pose{}
+	s.Vertices = make([]Point, len(a.prob.Figure.Vertices))
+	copy(s.Vertices, a.prob.Figure.Vertices)
+
+	a.foundSol = false
+	a.currSol = &s
 	a.currTemp = 1.0
+
+	// Remove this to get a deterministic solution for a problem.
+	rand.Seed(time.Now().UnixNano() % math.MaxInt32)
 }
 
 func (a *annealer) GetNextSolution() *Pose {
-	// TODO: Flesh this out.
-	return &a.sol
+	if a.foundSol {
+		return a.currSol
+	}
+
+	initCost := a.solCost(a.currSol)
+	currCost := initCost
+	const itersPerTemp = 100
+	for i := 0; i < itersPerTemp; i++ {
+		nSol := a.getCandidateSol()
+		nCost := a.solCost(nSol)
+		if a.switchSol(currCost, nCost) {
+			a.currSol = nSol
+			currCost = nCost
+		}
+	}
+	// TODO: Determine a suitable value for this decay factor.
+	const tempDecayFactor = 0.96
+	a.currTemp *= tempDecayFactor
+
+	if currCost == initCost {
+		a.foundSol = true
+	}
+	return a.currSol
 }
 
 func (a *annealer) WasFinalSolution() bool {
-	// TODO: Flesh this out.
-	return true
+	return a.foundSol
 }
 
 func NewSolver(prob *Problem, tgtSol *Pose) Solver {

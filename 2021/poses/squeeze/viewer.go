@@ -14,7 +14,9 @@ const (
 )
 
 type UserInput struct {
-	Quit bool
+	Run   bool
+	Reset bool
+	Quit  bool
 }
 
 type Viewer struct {
@@ -25,7 +27,6 @@ type Viewer struct {
 	input        UserInput
 
 	prob *Problem
-	sol  *Pose
 }
 
 func (v *Viewer) pt2scr(p Point) (int32, int32) {
@@ -74,7 +75,7 @@ func (v *Viewer) drawProblem() {
 		pp := &v.prob.preProc
 		for i := pp.holeLow.X; i <= pp.holeHigh.X; i++ {
 			for j := pp.holeLow.Y; j <= pp.holeHigh.Y; j++ {
-				if !isHoleCell(v.prob, Point{i, j}) {
+				if !isHoleCell(Point{i, j}, v.prob) {
 					continue
 				}
 				x[0] = int16(padding + float64(i)*v.zoom)
@@ -92,18 +93,15 @@ func (v *Viewer) drawProblem() {
 }
 
 func (v *Viewer) drawSolution(newSol *Pose) {
-	if newSol != nil {
-		v.sol = newSol
-	}
 	var verts []Point
-	if v.sol == nil {
-		if v.prob == nil {
-			return
-		}
+	if newSol != nil {
+		verts = newSol.Vertices
+	} else if v.prob != nil {
 		verts = v.prob.Figure.Vertices
 	} else {
-		verts = v.sol.Vertices
+		return
 	}
+
 	const lineWidth int32 = 3
 	lineColor := sdl.Color{255, 0, 0, 255}
 	for _, e := range v.prob.Figure.Edges {
@@ -173,9 +171,21 @@ func (v *Viewer) MaybeGetUserInput() (*UserInput, error) {
 				v.UpdateView(nil)
 			}
 		case *sdl.KeyboardEvent:
-			if t.Type == sdl.KEYDOWN && (t.Keysym.Sym == sdl.K_ESCAPE ||
-				t.Keysym.Sym == sdl.K_q) {
-				v.input.Quit = true
+			if t.Type == sdl.KEYDOWN {
+				switch t.Keysym.Sym {
+				case sdl.K_ESCAPE:
+					v.input.Run = false
+					v.input.Quit = true
+				case sdl.K_q:
+					v.input.Run = false
+					v.input.Quit = true
+				case sdl.K_r:
+					v.input.Run = false
+					v.input.Reset = true
+				case sdl.K_SPACE:
+					v.input.Run = true
+					v.input.Reset = false
+				}
 			}
 		}
 	}
