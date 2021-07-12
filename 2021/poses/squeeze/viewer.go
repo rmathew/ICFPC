@@ -173,7 +173,8 @@ func (v *Viewer) MaybeGetUserInput() (*UserInput, error) {
 				v.UpdateView(nil)
 			}
 		case *sdl.KeyboardEvent:
-			if t.Type == sdl.KEYDOWN && t.Keysym.Sym == sdl.K_ESCAPE {
+			if t.Type == sdl.KEYDOWN && (t.Keysym.Sym == sdl.K_ESCAPE ||
+				t.Keysym.Sym == sdl.K_q) {
 				v.input.Quit = true
 			}
 		}

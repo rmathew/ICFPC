@@ -48,8 +48,62 @@ type Pose struct {
 	Vertices []Point
 }
 
+type orientation int
+
+const (
+	collinear        orientation = 0
+	clockwise        orientation = -1
+	counterClockwise orientation = +1
+)
+
 func (p Point) String() string {
 	return fmt.Sprintf("(%d, %d)", p.X, p.Y)
+}
+
+func getOrientation(p1, p2, p3 Point) orientation {
+	// See: http://www.dcs.gla.ac.uk/~pat/52233/slides/Geometry1x1.pdf
+	o := (p2.Y-p1.Y)*(p3.X-p2.X) - (p2.X-p1.X)*(p3.Y-p2.Y)
+
+	// These assume that the +ve Y-axis points down.
+	if o == 0 {
+		return collinear
+	} else if o < 0 {
+		return clockwise
+	}
+	return counterClockwise
+}
+
+func insideSegment(p, q, r Point) bool {
+	// NOTE: Assumes r is collinear with the segment (p, q).
+	return r.X >= min(p.X, q.X) && r.X <= max(p.X, q.X) &&
+		r.Y >= min(p.Y, q.Y) && r.Y <= max(p.Y, q.Y)
+}
+func segmentsIntersect(p1, q1, p2, q2 Point) bool {
+	// See: http://www.dcs.gla.ac.uk/~pat/52233/slides/Geometry1x1.pdf
+	o1 := getOrientation(p1, q1, p2)
+	o2 := getOrientation(p1, q1, q2)
+	o3 := getOrientation(p2, q2, p1)
+	o4 := getOrientation(p2, q2, q1)
+
+	// General case.
+	if o1 != o2 && o3 != o4 {
+		return true
+	}
+	// Special cases for a segment and a point collinear with it.
+	if o1 == collinear && insideSegment(p1, q1, p2) {
+		return true
+	}
+	if o2 == collinear && insideSegment(p1, q1, q2) {
+		return true
+	}
+	if o3 == collinear && insideSegment(p2, q2, p1) {
+		return true
+	}
+	if o4 == collinear && insideSegment(p2, q2, q1) {
+		return true
+	}
+
+	return false
 }
 
 func getBounds(points []Point) (Point, Point) {
@@ -305,4 +359,17 @@ func IsValidPose(sol *Pose, prob *Problem) bool {
 	}
 	// TODO: Check epsilon-based constraints.
 	return len(sol.Vertices) == len(prob.Figure.Vertices)
+}
+
+func GetDislikes(sol *Pose, prob *Problem) int32 {
+	var dislikes int32 = 0
+	for _, hv := range prob.Hole.Vertices {
+		var minDist int32 = math.MaxInt32
+		for _, fv := range sol.Vertices {
+			dist := (hv.X-fv.X)*(hv.X-fv.X) + (hv.Y-fv.Y)*(hv.Y-fv.Y)
+			minDist = min(minDist, dist)
+		}
+		dislikes += minDist
+	}
+	return dislikes
 }

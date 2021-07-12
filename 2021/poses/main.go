@@ -1,75 +1,85 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"poses/squeeze"
 	"time"
 )
 
-const (
-	tickMs = 300 * time.Millisecond
-)
+func readProblem() (*squeeze.Problem, error) {
+	if len(os.Args) < 2 {
+		return nil, fmt.Errorf("missing input problem-file")
+	}
+	pF := os.Args[1]
+	log.Printf("Reading problem-file %q...", pF)
+	p, err := squeeze.ReadProblem(pF)
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func maybeReadSolution(prob *squeeze.Problem) (*squeeze.Pose, error) {
+	if len(os.Args) <= 2 {
+		return nil, nil
+	}
+	sF := os.Args[2]
+	log.Printf("Reading solution-file %q...", sF)
+	s, err := squeeze.ReadSolution(sF, prob)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
 
 func main() {
-	if len(os.Args) < 2 {
-		log.Fatalf("Missing input problem-file.\n")
-		os.Exit(1)
-	}
-	probFile := os.Args[1]
-	log.Printf("Reading problem-file %q...\n", probFile)
-	prob, err := squeeze.ReadProblem(probFile)
+	prob, err := readProblem()
 	if err != nil {
-		log.Fatalf("Unable to read problem-file %q: %v\n", probFile, err)
+		log.Fatalf("Unable to read the problem: %v", err)
 	}
 
 	var tgtSol *squeeze.Pose
-	if len(os.Args) > 2 {
-		solFile := os.Args[2]
-		log.Printf("Reading solution-file %q...\n", solFile)
-		if tgtSol, err = squeeze.ReadSolution(solFile, prob); err != nil {
-			log.Fatalf("Unable to read solution-file %q: %v\n", solFile, err)
-		}
+	if tgtSol, err = maybeReadSolution(prob); err != nil {
+		log.Fatalf("Unable to read the solution: %v", err)
 	}
+
+	solver := squeeze.NewSolver(prob, tgtSol)
+	solver.InitSolver()
 
 	v := squeeze.Viewer{}
 	if err = v.Init(prob); err != nil {
-		log.Fatalf("Unable to create viewer: %v", err)
+		log.Fatalf("Unable to create the viewer: %v", err)
 	}
 	defer v.Quit()
-
-	var currSol *squeeze.Pose
-	if tgtSol != nil {
-		currSol = &squeeze.Pose{}
-		currSol.Vertices = make([]squeeze.Point, len(prob.Figure.Vertices))
-		copy(currSol.Vertices, prob.Figure.Vertices)
-	}
-
 	v.UpdateView(nil)
-	const maxSteps = 16
-	currStep := 0
+
+	var inp *squeeze.UserInput
+	gotIt := false
 	ok2Cont := true
 	for ok2Cont {
-		if currStep < maxSteps && currSol != nil {
-			currStep++
-			for i, v := range currSol.Vertices {
-				deltaX := (tgtSol.Vertices[i].X - v.X) * int32(currStep) /
-					int32(maxSteps)
-				deltaY := (tgtSol.Vertices[i].Y - v.Y) * int32(currStep) /
-					int32(maxSteps)
-				currSol.Vertices[i].X += deltaX
-				currSol.Vertices[i].Y += deltaY
-			}
-			v.UpdateView(currSol)
-		} else {
-			// OK even if `tgtSol` is nil - draws the original figure then.
-			v.UpdateView(tgtSol)
+		t0 := time.Now()
+		sol := solver.GetNextSolution()
+		v.UpdateView(sol)
+		if !gotIt && solver.WasFinalSolution() {
+			d := squeeze.GetDislikes(sol, prob)
+			log.Printf("Found a solution with dislikes: %d", d)
+			gotIt = true
 		}
-		time.Sleep(tickMs)
-		inp, err := v.MaybeGetUserInput()
-		if err != nil {
+
+		const tickMs = 300 * time.Millisecond
+		if dur := time.Since(t0); dur < tickMs {
+			time.Sleep(tickMs - dur)
+		}
+
+		if inp, err = v.MaybeGetUserInput(); err != nil {
 			log.Fatalf("Unable to get user-input: %v", err)
 		}
 		ok2Cont = !inp.Quit
+	}
+
+	if !gotIt {
+		log.Printf("Could not find a solution.")
 	}
 }
