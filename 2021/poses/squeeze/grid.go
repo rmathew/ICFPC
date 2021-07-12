@@ -64,7 +64,7 @@ func getOrientation(p1, p2, p3 Point) orientation {
 	// See: http://www.dcs.gla.ac.uk/~pat/52233/slides/Geometry1x1.pdf
 	o := (p2.Y-p1.Y)*(p3.X-p2.X) - (p2.X-p1.X)*(p3.Y-p2.Y)
 
-	// These assume that the +ve Y-axis points down.
+	// These assume that the positive Y-axis points down.
 	if o == 0 {
 		return collinear
 	} else if o < 0 {
@@ -351,6 +351,23 @@ func ReadSolution(sFile string, prob *Problem) (*Pose, error) {
 		return nil, fmt.Errorf("invalid solution for problem")
 	}
 	return &sol, nil
+}
+
+func WriteSolution(sol *Pose, sFile string) error {
+	v := make([][]int32, len(sol.Vertices))
+	for i, p := range sol.Vertices {
+		v[i] = make([]int32, 2, 2)
+		v[i][0] = p.X
+		v[i][1] = p.Y
+	}
+	m := make(map[string][][]int32)
+	m["vertices"] = v
+
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(sFile, b, 0644)
 }
 
 func IsValidSolution(sol *Pose, prob *Problem) bool {

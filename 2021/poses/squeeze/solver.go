@@ -73,9 +73,9 @@ func (a *annealer) randomlyTranslate(sol *Pose) {
 	xW, yH := high.X-low.X, high.Y-low.Y
 
 	// Up to 1% jitter up/down and right/left, but by at least 1 cell.
-	const jitterPct float64 = 0.01
-	maxDispX := max(1, int32(jitterPct*float64(xW)))
-	maxDispY := max(1, int32(jitterPct*float64(yH)))
+	const maxJitterPct float64 = 0.01
+	maxDispX := max(1, int32(maxJitterPct*float64(xW)))
+	maxDispY := max(1, int32(maxJitterPct*float64(yH)))
 	xBase, yBase := max(0, low.X-maxDispX), max(0, low.Y-maxDispY)
 	xDisp := xBase + int32(2.0*rand.Float64()*float64(maxDispX)) - low.X
 	yDisp := yBase + int32(2.0*rand.Float64()*float64(maxDispY)) - low.Y
@@ -87,7 +87,40 @@ func (a *annealer) randomlyTranslate(sol *Pose) {
 }
 
 func (a *annealer) randomlyRotate(sol *Pose) {
-	// TODO: Flesh this out.
+	low, high := getBounds(sol.Vertices)
+	cX, cY := (low.X+high.X)/2, (low.Y+high.Y)/2
+
+	// TODO: Find a sure-fire way of rotating within bounds instead of doing
+	// trial-and-error.
+	const maxAttempts = 3
+	const maxJitterPct float64 = 0.01
+	for i := 0; i < maxAttempts; i++ {
+		v := make([]Point, len(sol.Vertices))
+		copy(v, sol.Vertices)
+
+		// Rotate up to `maxJitterPct`-% of 2xPi radians in either direction.
+		theta := 2.0 * maxJitterPct * 2.0 * math.Pi * (rand.Float64() - 0.5)
+		cosT, sinT := math.Cos(theta), math.Sin(theta)
+		for j, _ := range v {
+			x, y := v[j].X, v[j].Y
+			// Translate so that the center is at the origin.
+			x -= cX
+			y -= cY
+			// Rotate around the new origin.
+			nX := int32(float64(x)*cosT - float64(y)*sinT)
+			nY := int32(float64(x)*sinT + float64(y)*cosT)
+			// Translate back into the original frame of reference.
+			v[j].X, v[j].Y = nX+cX, nY+cY
+		}
+
+		// Use the output of this attempt only if it is within bounds.
+		nL, _ := getBounds(v)
+		if nL.X < 0 || nL.Y < 0 {
+			continue
+		}
+		copy(sol.Vertices, v)
+		return
+	}
 }
 
 func (a *annealer) randomlyShear(sol *Pose) {
@@ -110,14 +143,17 @@ func (a *annealer) getCandidateSol() *Pose {
 	return &nSol
 }
 
-func (a *annealer) switchSol(c0, c1 cost) bool {
+func (a *annealer) shouldSwitchSol(c0, c1 cost) bool {
 	if c1 < c0 {
 		return true
+	} else if c1 == c0 {
+		return false
 	}
 	// TODO: Determine a suitable value for this normalization constant.
-	const kB float64 = 1.0
-	// Note that c0 - c1 is 0 or -ve.
-	return math.Exp(float64(c0-c1)/(kB*a.currTemp)) > rand.Float64()
+	// Ideally it should give a 50% probability at the highest temperature.
+	const kBoltzmann float64 = 1.0
+	// Note that c0 - c1 is negative here.
+	return math.Exp(float64(c0-c1)/(kBoltzmann*a.currTemp)) > rand.Float64()
 }
 
 func (a *annealer) Reset() {
@@ -144,7 +180,7 @@ func (a *annealer) GetNextSolution() *Pose {
 	for i := 0; i < itersPerTemp; i++ {
 		nSol := a.getCandidateSol()
 		nCost := a.solCost(nSol)
-		if a.switchSol(currCost, nCost) {
+		if a.shouldSwitchSol(currCost, nCost) {
 			a.currSol = nSol
 			currCost = nCost
 		}

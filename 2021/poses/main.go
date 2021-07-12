@@ -1,18 +1,28 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
-	"os"
+	"math"
 	"poses/squeeze"
+	"strings"
 	"time"
 )
 
+var inpSol = flag.String("inp-sol", "", "file for reading in a solution")
+var outSol = flag.String("out-sol", "", "file for writing out the best solution")
+
+type bestSol struct {
+	sol   *squeeze.Pose
+	score int32
+}
+
 func readProblem() (*squeeze.Problem, error) {
-	if len(os.Args) < 2 {
+	if flag.NArg() == 0 {
 		return nil, fmt.Errorf("missing input problem-file")
 	}
-	pF := os.Args[1]
+	pF := flag.Arg(0)
 	log.Printf("Reading problem-file %q...", pF)
 	p, err := squeeze.ReadProblem(pF)
 	if err != nil {
@@ -22,10 +32,10 @@ func readProblem() (*squeeze.Problem, error) {
 }
 
 func maybeReadSolution(prob *squeeze.Problem) (*squeeze.Pose, error) {
-	if len(os.Args) <= 2 {
+	sF := strings.TrimSpace(*inpSol)
+	if len(sF) == 0 {
 		return nil, nil
 	}
-	sF := os.Args[2]
 	log.Printf("Reading solution-file %q...", sF)
 	s, err := squeeze.ReadSolution(sF, prob)
 	if err != nil {
@@ -34,7 +44,34 @@ func maybeReadSolution(prob *squeeze.Problem) (*squeeze.Pose, error) {
 	return s, nil
 }
 
+func maybeWriteBestSol(best *bestSol, sol *squeeze.Pose,
+	prob *squeeze.Problem) error {
+	d := squeeze.GetDislikes(sol, prob)
+	vs := "INVALID"
+	ok := squeeze.IsValidSolution(sol, prob)
+	if ok {
+		vs = "valid"
+	}
+	log.Printf("Found %s solution with dislikes=%d", vs, d)
+	if !ok || d > best.score {
+		return nil
+	}
+	best.sol = sol
+	best.score = d
+	sF := strings.TrimSpace(*outSol)
+	if len(sF) == 0 {
+		return nil
+	}
+	if err := squeeze.WriteSolution(sol, sF); err != nil {
+		return err
+	}
+	log.Printf("New best solution with dislikes=%d saved in %q.", d, sF)
+	return nil
+}
+
 func main() {
+	flag.Parse()
+
 	prob, err := readProblem()
 	if err != nil {
 		log.Fatalf("Unable to read the problem: %v", err)
@@ -56,6 +93,7 @@ func main() {
 	v.UpdateView(nil)
 
 	var inp *squeeze.UserInput
+	best := bestSol{nil, math.MaxInt32}
 	gotIt := false
 	ok2Cont := true
 	run := false
@@ -65,9 +103,9 @@ func main() {
 			sol := solver.GetNextSolution()
 			v.UpdateView(sol)
 			if !gotIt && solver.WasFinalSolution() {
-				d := squeeze.GetDislikes(sol, prob)
-				ok := squeeze.IsValidSolution(sol, prob)
-				log.Printf("Found valid=%v solution with dislikes=%d", ok, d)
+				if err = maybeWriteBestSol(&best, sol, prob); err != nil {
+					log.Fatalf("Unable to write the solution: %v", err)
+				}
 				gotIt = true
 			}
 		}
