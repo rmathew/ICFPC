@@ -63,9 +63,20 @@ func (t *tgtSolSolver) WasFinalSolution() bool {
 
 func (a *annealer) solCost(sol *Pose) cost {
 	c := cost(GetDislikes(sol, a.prob))
-	if !IsValidSolution(sol, a.prob) {
-		return c + cost(math.MaxInt32/2)
+
+	pV := getPoseViolations(sol, a.prob)
+	nV := len(a.prob.Hole.Vertices)
+	for _, i := range pV.vertsOutsideHole {
+		minDist := int32(math.MaxInt32)
+		for j, hV := range a.prob.Hole.Vertices {
+			next := a.prob.Hole.Vertices[(j+1)%nV]
+			minDist = min(minDist, minDistToSegment(hV, next, sol.Vertices[i]))
+		}
+		c += cost(minDist)
 	}
+	c += cost(pV.numStrayingEdges)
+	c += cost(pV.numWrongLenEdges)
+
 	return c
 }
 

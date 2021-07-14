@@ -60,6 +60,12 @@ type Pose struct {
 	Vertices []Point
 }
 
+type poseViolations struct {
+	vertsOutsideHole []int
+	numStrayingEdges int
+	numWrongLenEdges int
+}
+
 type orientation int
 
 const (
@@ -70,6 +76,10 @@ const (
 
 func (p Point) String() string {
 	return fmt.Sprintf("(%d, %d)", p.X, p.Y)
+}
+
+func sqDist(p, q Point) int32 {
+	return (p.X-q.X)*(p.X-q.X) + (p.Y-q.Y)*(p.Y-q.Y)
 }
 
 func getOrientation(p1, p2, p3 Point) orientation {
@@ -90,6 +100,7 @@ func insideSegment(p, q, r Point) bool {
 	return r.X >= min(p.X, q.X) && r.X <= max(p.X, q.X) &&
 		r.Y >= min(p.Y, q.Y) && r.Y <= max(p.Y, q.Y)
 }
+
 func segmentsIntersect(p1, q1, p2, q2 Point) bool {
 	// See: http://www.dcs.gla.ac.uk/~pat/52233/slides/Geometry1x1.pdf
 	o1 := getOrientation(p1, q1, p2)
@@ -101,6 +112,7 @@ func segmentsIntersect(p1, q1, p2, q2 Point) bool {
 	if o1 != o2 && o3 != o4 {
 		return true
 	}
+	/* SKIPPED: The problem allows figure-points to be on hole-boundaries.
 	// Special cases for a segment and a point collinear with it.
 	if o1 == collinear && insideSegment(p1, q1, p2) {
 		return true
@@ -114,8 +126,21 @@ func segmentsIntersect(p1, q1, p2, q2 Point) bool {
 	if o4 == collinear && insideSegment(p2, q2, q1) {
 		return true
 	}
+	*/
 
 	return false
+}
+
+func minDistToSegment(p, q, r Point) int32 {
+	d := sqDist(p, q)
+	if d == 0 {
+		return sqDist(p, r)
+	}
+	dot := (r.X-p.X)*(q.X-p.X) + (r.Y-p.Y)*(q.Y-p.Y)
+	t := math.Max(0, math.Min(1, float64(dot)/float64(d)))
+	pX := int32(float64(p.X)*(1-t) + t*float64(q.X))
+	pY := int32(float64(p.Y)*(1-t) + t*float64(q.Y))
+	return sqDist(r, Point{pX, pY})
 }
 
 func getBounds(pts []Point) (Point, Point) {
@@ -251,11 +276,12 @@ func isHoleCell(pt Point, prob *Problem) bool {
 }
 
 func preProcessProblem(prob *Problem) error {
+	fv := prob.Figure.Vertices
 	pp := &prob.preProc
 	pp.holeLow, pp.holeHigh = getBounds(prob.Hole.Vertices)
 	pp.holeWidth = pp.holeHigh.X - pp.holeLow.X + 1
 	pp.holeHeight = pp.holeHigh.Y - pp.holeLow.Y + 1
-	pp.figLow, pp.figHigh = getBounds(prob.Figure.Vertices)
+	pp.figLow, pp.figHigh = getBounds(fv)
 	pp.low.X = min(pp.holeLow.X, pp.figLow.X)
 	pp.low.Y = min(pp.holeLow.Y, pp.figLow.Y)
 	pp.high.X = max(pp.holeHigh.X, pp.figHigh.X)
@@ -268,18 +294,15 @@ func preProcessProblem(prob *Problem) error {
 	pp.minEdgeScale = (epsilonScale - prob.Epsilon) / epsilonScale
 	pp.maxEdgeScale = (epsilonScale + prob.Epsilon) / epsilonScale
 
-	pp.figVertEdges = make([][]figVertEdgeInfo, len(prob.Figure.Vertices))
-	for i := 0; i < len(prob.Figure.Vertices); i++ {
-		pp.figVertEdges[i] = make([]figVertEdgeInfo, 0,
-			len(prob.Figure.Vertices)-1)
+	pp.figVertEdges = make([][]figVertEdgeInfo, len(fv))
+	for i := 0; i < len(fv); i++ {
+		pp.figVertEdges[i] = make([]figVertEdgeInfo, 0, len(fv)-1)
 	}
 	for _, e := range prob.Figure.Edges {
 		pi, qi := e.StartIdx, e.EndIdx
-		p := prob.Figure.Vertices[pi]
-		q := prob.Figure.Vertices[qi]
-		dist := (p.X-q.X)*(p.X-q.X) + (p.Y-q.Y)*(p.Y-q.Y)
-		minDist := int32(pp.minEdgeScale * float64(dist))
-		maxDist := int32(pp.maxEdgeScale * float64(dist))
+		dist := float64(sqDist(fv[pi], fv[qi]))
+		minDist := int32(pp.minEdgeScale * dist)
+		maxDist := int32(pp.maxEdgeScale * dist)
 
 		pei := figVertEdgeInfo{qi, minDist, maxDist}
 		pp.figVertEdges[pi] = append(pp.figVertEdges[pi], pei)
@@ -300,15 +323,46 @@ func isVertexAllowed(sol *Pose, idx int, prob *Problem) bool {
 	if idx < 0 || idx >= len(sol.Vertices) {
 		return false
 	}
-	vX, vY := sol.Vertices[idx].X, sol.Vertices[idx].Y
-	for _, u := range prob.preProc.figVertEdges[idx] {
-		uX, uY := sol.Vertices[u.idx].X, sol.Vertices[u.idx].Y
-		dist := (vX-uX)*(vX-uX) + (vY-uY)*(vY-uY)
-		if dist < u.minDist || dist > u.maxDist {
+	p := sol.Vertices[idx]
+	for _, q := range prob.preProc.figVertEdges[idx] {
+		dist := sqDist(p, sol.Vertices[q.idx])
+		if dist < q.minDist || dist > q.maxDist {
 			return false
 		}
 	}
 	return true
+}
+
+func getPoseViolations(sol *Pose, prob *Problem) *poseViolations {
+	pV := poseViolations{}
+
+	for i, sv := range sol.Vertices {
+		if isHoleCell(sv, prob) {
+			continue
+		}
+		pV.vertsOutsideHole = append(pV.vertsOutsideHole, i)
+	}
+	hV := prob.Hole.Vertices
+	nV := len(hV)
+FigEdgesLoop:
+	for _, e := range prob.Figure.Edges {
+		st, en := e.StartIdx, e.EndIdx
+		p1, q1 := sol.Vertices[st], sol.Vertices[en]
+		for i, p2 := range hV {
+			q2 := hV[(i+1)%nV]
+			if segmentsIntersect(p1, q1, p2, q2) {
+				pV.numStrayingEdges++
+				continue FigEdgesLoop
+			}
+		}
+	}
+	for i, _ := range sol.Vertices {
+		if isVertexAllowed(sol, i, prob) {
+			continue
+		}
+		pV.numWrongLenEdges++
+	}
+	return &pV
 }
 
 func ReadProblem(pFile string) (*Problem, error) {
@@ -425,28 +479,9 @@ func IsValidSolution(sol *Pose, prob *Problem) bool {
 	if len(sol.Vertices) != len(prob.Figure.Vertices) {
 		return false
 	}
-	for _, sv := range sol.Vertices {
-		if isHoleCell(sv, prob) {
-			return false
-		}
-	}
-	hV := prob.Hole.Vertices
-	nV := len(hV)
-	for _, e := range prob.Figure.Edges {
-		p1, q1 := sol.Vertices[e.StartIdx], sol.Vertices[e.EndIdx]
-		for i, p2 := range hV {
-			q2 := hV[(i+1)%nV]
-			if segmentsIntersect(p1, q1, p2, q2) {
-				return false
-			}
-		}
-	}
-	for i, _ := range sol.Vertices {
-		if !isVertexAllowed(sol, i, prob) {
-			return false
-		}
-	}
-	return true
+	pv := getPoseViolations(sol, prob)
+	return pv.vertsOutsideHole == nil && pv.numStrayingEdges == 0 &&
+		pv.numWrongLenEdges == 0
 }
 
 func GetDislikes(sol *Pose, prob *Problem) int32 {
@@ -454,8 +489,7 @@ func GetDislikes(sol *Pose, prob *Problem) int32 {
 	for _, hv := range prob.Hole.Vertices {
 		var minDist int32 = math.MaxInt32
 		for _, fv := range sol.Vertices {
-			dist := (hv.X-fv.X)*(hv.X-fv.X) + (hv.Y-fv.Y)*(hv.Y-fv.Y)
-			minDist = min(minDist, dist)
+			minDist = min(minDist, sqDist(hv, fv))
 		}
 		dislikes += minDist
 	}
