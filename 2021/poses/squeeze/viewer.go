@@ -159,6 +159,7 @@ func (v *Viewer) Quit() {
 }
 
 func (v *Viewer) MaybeGetUserInput() (*UserInput, error) {
+	v.input.Reset = false
 	v.input.Quit = false
 	for evt := sdl.PollEvent(); evt != nil; evt = sdl.PollEvent() {
 		switch t := evt.(type) {
@@ -173,10 +174,7 @@ func (v *Viewer) MaybeGetUserInput() (*UserInput, error) {
 		case *sdl.KeyboardEvent:
 			if t.Type == sdl.KEYDOWN {
 				switch t.Keysym.Sym {
-				case sdl.K_ESCAPE:
-					v.input.Run = false
-					v.input.Quit = true
-				case sdl.K_q:
+				case sdl.K_ESCAPE, sdl.K_q:
 					v.input.Run = false
 					v.input.Quit = true
 				case sdl.K_r:

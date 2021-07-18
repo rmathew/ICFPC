@@ -63,14 +63,13 @@ type Pose struct {
 type poseViolations struct {
 	vertsOutsideHole []int
 	numStrayingEdges int
-	numWrongLenEdges int
 }
 
 type orientation int
 
 const (
-	collinear        orientation = 0
 	clockwise        orientation = -1
+	collinear        orientation = 0
 	counterClockwise orientation = +1
 )
 
@@ -84,9 +83,8 @@ func sqDist(p, q Point) int32 {
 
 func getOrientation(p1, p2, p3 Point) orientation {
 	// See: http://www.dcs.gla.ac.uk/~pat/52233/slides/Geometry1x1.pdf
-	o := (p2.Y-p1.Y)*(p3.X-p2.X) - (p2.X-p1.X)*(p3.Y-p2.Y)
+	o := (p2.Y-p1.Y)*(p3.X-p2.X) - (p3.Y-p2.Y)*(p2.X-p1.X)
 
-	// These assume that the positive Y-axis points down.
 	if o == 0 {
 		return collinear
 	} else if o < 0 {
@@ -112,7 +110,7 @@ func segmentsIntersect(p1, q1, p2, q2 Point) bool {
 	if o1 != o2 && o3 != o4 {
 		return true
 	}
-	/* SKIPPED: The problem allows figure-points to be on hole-boundaries.
+
 	// Special cases for a segment and a point collinear with it.
 	if o1 == collinear && insideSegment(p1, q1, p2) {
 		return true
@@ -126,9 +124,23 @@ func segmentsIntersect(p1, q1, p2, q2 Point) bool {
 	if o4 == collinear && insideSegment(p2, q2, q1) {
 		return true
 	}
-	*/
 
 	return false
+}
+
+func onTheSegment(p, q, r Point) bool {
+	return getOrientation(p, q, r) == collinear && insideSegment(p, q, r)
+}
+
+func figEdgeCutsHoleEdge(fs, fe, hs, he Point) bool {
+	if !segmentsIntersect(fs, fe, hs, he) {
+		return false
+	}
+	// The problem-definition allows figure-edges to be on the hole-edges.
+	if onTheSegment(hs, he, fs) || onTheSegment(hs, he, fe) {
+		return false
+	}
+	return true
 }
 
 func minDistToSegment(p, q, r Point) int32 {
@@ -320,9 +332,6 @@ func preProcessProblem(prob *Problem) error {
 }
 
 func isVertexAllowed(sol *Pose, idx int, prob *Problem) bool {
-	if idx < 0 || idx >= len(sol.Vertices) {
-		return false
-	}
 	p := sol.Vertices[idx]
 	for _, q := range prob.preProc.figVertEdges[idx] {
 		dist := sqDist(p, sol.Vertices[q.idx])
@@ -336,32 +345,28 @@ func isVertexAllowed(sol *Pose, idx int, prob *Problem) bool {
 func getPoseViolations(sol *Pose, prob *Problem) *poseViolations {
 	pV := poseViolations{}
 
+	pV.vertsOutsideHole = make([]int, 0, len(sol.Vertices))
 	for i, sv := range sol.Vertices {
 		if isHoleCell(sv, prob) {
 			continue
 		}
 		pV.vertsOutsideHole = append(pV.vertsOutsideHole, i)
 	}
+
 	hV := prob.Hole.Vertices
-	nV := len(hV)
+	nhV := len(hV)
 FigEdgesLoop:
 	for _, e := range prob.Figure.Edges {
-		st, en := e.StartIdx, e.EndIdx
-		p1, q1 := sol.Vertices[st], sol.Vertices[en]
+		p1, q1 := sol.Vertices[e.StartIdx], sol.Vertices[e.EndIdx]
 		for i, p2 := range hV {
-			q2 := hV[(i+1)%nV]
-			if segmentsIntersect(p1, q1, p2, q2) {
+			q2 := hV[(i+1)%nhV]
+			if figEdgeCutsHoleEdge(p1, q1, p2, q2) {
 				pV.numStrayingEdges++
 				continue FigEdgesLoop
 			}
 		}
 	}
-	for i, _ := range sol.Vertices {
-		if isVertexAllowed(sol, i, prob) {
-			continue
-		}
-		pV.numWrongLenEdges++
-	}
+
 	return &pV
 }
 
@@ -426,6 +431,25 @@ func ReadProblem(pFile string) (*Problem, error) {
 	return &prob, nil
 }
 
+func ValidateSolution(sol *Pose, prob *Problem) error {
+	if len(sol.Vertices) != len(prob.Figure.Vertices) {
+		return fmt.Errorf("wrong number of vertices (%d)", len(sol.Vertices))
+	}
+	pv := getPoseViolations(sol, prob)
+	if len(pv.vertsOutsideHole) > 0 {
+		return fmt.Errorf("%d vertices outside", len(pv.vertsOutsideHole))
+	}
+	if pv.numStrayingEdges > 0 {
+		return fmt.Errorf("%d stray edges", pv.numStrayingEdges)
+	}
+	for i, _ := range sol.Vertices {
+		if !isVertexAllowed(sol, i, prob) {
+			return fmt.Errorf("improperly stretched vertex @%d", i)
+		}
+	}
+	return nil
+}
+
 func ReadSolution(sFile string, prob *Problem) (*Pose, error) {
 	b, err := ioutil.ReadFile(sFile)
 	if err != nil {
@@ -452,8 +476,8 @@ func ReadSolution(sFile string, prob *Problem) (*Pose, error) {
 			return nil, fmt.Errorf("unknown pose-level JSON-key %q", k)
 		}
 	}
-	if !IsValidSolution(&sol, prob) {
-		return nil, fmt.Errorf("invalid solution for problem")
+	if err := ValidateSolution(&sol, prob); err != nil {
+		return nil, fmt.Errorf("invalid solution: %w", err)
 	}
 	return &sol, nil
 }
@@ -473,15 +497,6 @@ func WriteSolution(sol *Pose, sFile string) error {
 		return err
 	}
 	return ioutil.WriteFile(sFile, b, 0644)
-}
-
-func IsValidSolution(sol *Pose, prob *Problem) bool {
-	if len(sol.Vertices) != len(prob.Figure.Vertices) {
-		return false
-	}
-	pv := getPoseViolations(sol, prob)
-	return pv.vertsOutsideHole == nil && pv.numStrayingEdges == 0 &&
-		pv.numWrongLenEdges == 0
 }
 
 func GetDislikes(sol *Pose, prob *Problem) int32 {

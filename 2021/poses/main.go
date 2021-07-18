@@ -47,13 +47,13 @@ func maybeReadSolution(prob *squeeze.Problem) (*squeeze.Pose, error) {
 func maybeWriteBestSol(best *bestSol, sol *squeeze.Pose,
 	prob *squeeze.Problem) error {
 	d := squeeze.GetDislikes(sol, prob)
-	vs := "Have an INVALID"
-	ok := squeeze.IsValidSolution(sol, prob)
-	if ok {
-		vs = "Found a valid"
+	vs := "Got an INVALID"
+	err := squeeze.ValidateSolution(sol, prob)
+	if err == nil {
+		vs = "Got a valid"
 	}
 	log.Printf("%s solution with dislikes=%d", vs, d)
-	if !ok || d > best.score {
+	if err != nil || d > best.score {
 		return nil
 	}
 	best.sol = sol
@@ -71,6 +71,10 @@ func maybeWriteBestSol(best *bestSol, sol *squeeze.Pose,
 
 func main() {
 	flag.Parse()
+
+	if flag.NArg() != 1 {
+		log.Fatalf("Unexpected number of arguments: %d (need 1).", flag.NArg())
+	}
 
 	prob, err := readProblem()
 	if err != nil {
