@@ -1,4 +1,2 @@
-*.swp
-*.o
-*.pyc
-*.log
+**/*.pyc
+**/*.log
