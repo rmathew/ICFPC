@@ -26,7 +26,7 @@ var pointCutInsnRE = regexp.MustCompile(`cut` + blkId + pointRE)
 var mergeInsnRE = regexp.MustCompile(`merge` + blkId + blkId)
 var swapInsnRE = regexp.MustCompile(`swap` + blkId + blkId)
 
-func rgbaFromStr(sA []string) color.RGBA {
+func rgbaFromStr(sA []string) color.NRGBA {
 	rgba := make([]uint8, 0, len(sA))
 	for _, s := range sA {
 		n, err := strconv.Atoi(s)
@@ -35,7 +35,7 @@ func rgbaFromStr(sA []string) color.RGBA {
 		}
 		rgba = append(rgba, uint8(n))
 	}
-	return color.RGBA{rgba[0], rgba[1], rgba[2], rgba[3]}
+	return color.NRGBA{rgba[0], rgba[1], rgba[2], rgba[3]}
 }
 
 func parseProgramLine(line string) (move, error) {

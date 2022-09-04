@@ -12,11 +12,11 @@ import (
 
 type move interface {
 	fmt.Stringer
-	execute(c *canvas) (float64, error)
+	execute(c *canvas) (int, error)
 }
 
-func moveCost(baseCost, blockSize, canvasSize float64) float64 {
-	return math.RoundToEven(baseCost * canvasSize / blockSize)
+func moveCost(baseCost, blockSize, canvasSize float64) int {
+	return int(math.RoundToEven(baseCost * canvasSize / blockSize))
 }
 
 // <<<--- LINE CUT --->>>
@@ -42,23 +42,23 @@ func (m *lineCut) String() string {
 	return fmt.Sprintf("cut [%s] [%s] [%d]", m.blockId, dirStr, m.offset)
 }
 
-func (m *lineCut) execute(c *canvas) (float64, error) {
+func (m *lineCut) execute(c *canvas) (int, error) {
 	b0, ok := c.blocks[m.blockId]
 	if !ok {
 		return 0.0, fmt.Errorf("bad block-id %q", m.blockId)
 	}
 	b1, b2 := b0, b0
 	if m.dir == vertical {
-		if m.offset < b0.shape.Min.X || m.offset > b0.shape.Max.X {
+		if m.offset < b0.shape.Min.X || m.offset >= b0.shape.Max.X {
 			return 0.0, fmt.Errorf("X-offset %d out of bounds", m.offset)
 		}
-		b1.shape.Max.X = m.offset - 1
+		b1.shape.Max.X = m.offset
 		b2.shape.Min.X = m.offset
 	} else {
-		if m.offset < b0.shape.Min.Y || m.offset > b0.shape.Max.Y {
+		if m.offset < b0.shape.Min.Y || m.offset >= b0.shape.Max.Y {
 			return 0.0, fmt.Errorf("Y-offset %d out of bounds", m.offset)
 		}
-		b1.shape.Max.Y = m.offset - 1
+		b1.shape.Max.Y = m.offset
 		b2.shape.Min.Y = m.offset
 	}
 	delete(c.blocks, m.blockId)
@@ -78,25 +78,25 @@ func (m *pointCut) String() string {
 	return fmt.Sprintf("cut [%s] [%d, %d]", m.blockId, m.point.X, m.point.Y)
 }
 
-func (m *pointCut) execute(c *canvas) (float64, error) {
+func (m *pointCut) execute(c *canvas) (int, error) {
 	b0, ok := c.blocks[m.blockId]
 	if !ok {
 		return 0.0, fmt.Errorf("bad block-id %q", m.blockId)
 	}
 	b1, b2, b3, b4 := b0, b0, b0, b0
-	if m.point.X < b0.shape.Min.X || m.point.X > b0.shape.Max.X {
+	if m.point.X < b0.shape.Min.X || m.point.X >= b0.shape.Max.X {
 		return 0.0, fmt.Errorf("X-point %d out of bounds", m.point.X)
 	}
-	if m.point.Y < b0.shape.Min.Y || m.point.Y > b0.shape.Max.Y {
+	if m.point.Y < b0.shape.Min.Y || m.point.Y >= b0.shape.Max.Y {
 		return 0.0, fmt.Errorf("Y-point %d out of bounds", m.point.Y)
 	}
-	b1.shape.Max.X = m.point.X - 1
-	b1.shape.Max.Y = m.point.Y - 1
+	b1.shape.Max.X = m.point.X
+	b1.shape.Max.Y = m.point.Y
 	b2.shape.Min.X = m.point.X
-	b2.shape.Max.Y = m.point.Y - 1
+	b2.shape.Max.Y = m.point.Y
 	b3.shape.Min.X = m.point.X
 	b3.shape.Min.Y = m.point.Y
-	b4.shape.Max.X = m.point.X - 1
+	b4.shape.Max.X = m.point.X
 	b4.shape.Min.Y = m.point.Y
 
 	delete(c.blocks, m.blockId)
@@ -111,7 +111,7 @@ func (m *pointCut) execute(c *canvas) (float64, error) {
 
 type colorBlock struct {
 	blockId    string
-	pixelColor color.RGBA
+	pixelColor color.NRGBA
 }
 
 func (m *colorBlock) String() string {
@@ -119,7 +119,7 @@ func (m *colorBlock) String() string {
 	return fmt.Sprintf("color [%s] [%d, %d, %d, %d]", m.blockId, clr.R, clr.G, clr.B, clr.A)
 }
 
-func (m *colorBlock) execute(c *canvas) (float64, error) {
+func (m *colorBlock) execute(c *canvas) (int, error) {
 	b0, ok := c.blocks[m.blockId]
 	if !ok {
 		return 0.0, fmt.Errorf("bad block-id %q", m.blockId)
@@ -140,7 +140,7 @@ func (m *swapBlocks) String() string {
 	return fmt.Sprintf("swap [%s] [%s]", m.blockId1, m.blockId2)
 }
 
-func (m *swapBlocks) execute(c *canvas) (float64, error) {
+func (m *swapBlocks) execute(c *canvas) (int, error) {
 	b1, ok := c.blocks[m.blockId1]
 	if !ok {
 		return 0.0, fmt.Errorf("bad first block-id %q", m.blockId1)
@@ -174,7 +174,7 @@ func compatibleRectsForMerge(r1, r2 *image.Rectangle) bool {
 	return false
 }
 
-func (m *mergeBlocks) execute(c *canvas) (float64, error) {
+func (m *mergeBlocks) execute(c *canvas) (int, error) {
 	b1, ok := c.blocks[m.blockId1]
 	if !ok {
 		return 0.0, fmt.Errorf("bad first block-id %q", m.blockId1)
@@ -198,13 +198,13 @@ type Program struct {
 }
 
 type ExecResult struct {
-	img   *image.RGBA
-	score float64
+	img   *image.NRGBA
+	Score int
 }
 
 func InterpretProgram(prob *Problem, prog *Program) (*ExecResult, error) {
 	c := newCanvas(prob)
-	var totalCost float64
+	var totalCost int
 	for _, i := range prog.insns {
 		insnCost, err := i.execute(c)
 		if err != nil {
@@ -213,13 +213,13 @@ func InterpretProgram(prob *Problem, prog *Program) (*ExecResult, error) {
 		totalCost += insnCost
 	}
 	var res ExecResult
-	res.img = image.NewRGBA(c.bounds)
+	res.img = image.NewNRGBA(c.bounds)
 	for _, block := range c.blocks {
 		srcImg := image.NewUniform(block.pixelColor)
 		// TODO: Handle complex blocks as well.
 		draw.Draw(res.img, block.shape, srcImg, image.Point{}, draw.Src)
 	}
 	// TODO: Compute similarity and add it to the score here.
-	res.score = totalCost
+	res.Score = totalCost
 	return &res, nil
 }

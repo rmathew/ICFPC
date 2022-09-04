@@ -62,6 +62,7 @@ func putProgram(prob *painter.Problem, prog *painter.Program) error {
 		if err != nil {
 			return err
 		}
+		log.Printf("Program completed successfully with score %d.", res.Score)
 		log.Printf("Saving the result to %q", *outImg)
 		err = painter.RenderResult(res, *outImg)
 		if err != nil {
