@@ -18,7 +18,7 @@ type block struct {
 
 type canvas struct {
 	bounds   image.Rectangle
-	size     float64
+	size     int
 	block_id int
 	blocks   map[string]block
 }
@@ -27,8 +27,8 @@ type Problem struct {
 	tgtPainting *image.NRGBA
 }
 
-func rectSize(r *image.Rectangle) float64 {
-	return float64(r.Dx()) * float64(r.Dy())
+func rectSize(r *image.Rectangle) int {
+	return r.Dx() * r.Dy()
 }
 
 func newCanvas(p *Problem) *canvas {

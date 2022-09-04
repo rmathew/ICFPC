@@ -15,8 +15,10 @@ type move interface {
 	execute(c *canvas) (int, error)
 }
 
-func moveCost(baseCost, blockSize, canvasSize float64) int {
-	return int(math.RoundToEven(baseCost * canvasSize / blockSize))
+func moveCost(baseCost, blockSize, canvasSize int) int {
+	cost := float64(baseCost) * float64(canvasSize) / float64(blockSize)
+	// XXX: Underspecified; math.Round() gives a slightly different answer.
+	return int(math.RoundToEven(cost))
 }
 
 // <<<--- LINE CUT --->>>
@@ -64,7 +66,7 @@ func (m *lineCut) execute(c *canvas) (int, error) {
 	delete(c.blocks, m.blockId)
 	c.blocks[m.blockId+".0"] = b1
 	c.blocks[m.blockId+".1"] = b2
-	return moveCost(7.0, rectSize(&b0.shape), c.size), nil
+	return moveCost(7, rectSize(&b0.shape), c.size), nil
 }
 
 // <<<--- POINT CUT --->>>
@@ -104,7 +106,7 @@ func (m *pointCut) execute(c *canvas) (int, error) {
 	c.blocks[m.blockId+".1"] = b2
 	c.blocks[m.blockId+".2"] = b3
 	c.blocks[m.blockId+".3"] = b4
-	return moveCost(10.0, rectSize(&b0.shape), c.size), nil
+	return moveCost(10, rectSize(&b0.shape), c.size), nil
 }
 
 // <<<--- COLOR BLOCK --->>>
@@ -126,7 +128,7 @@ func (m *colorBlock) execute(c *canvas) (int, error) {
 	}
 	b0.pixelColor = m.pixelColor
 	c.blocks[m.blockId] = b0
-	return moveCost(5.0, rectSize(&b0.shape), c.size), nil
+	return moveCost(5, rectSize(&b0.shape), c.size), nil
 }
 
 // <<<--- SWAP BLOCKS --->>>
@@ -155,7 +157,7 @@ func (m *swapBlocks) execute(c *canvas) (int, error) {
 	b1, b2 = b2, b1
 	c.blocks[m.blockId1] = b1
 	c.blocks[m.blockId2] = b2
-	return moveCost(3.0, rectSize(&b1.shape), c.size), nil
+	return moveCost(3, rectSize(&b1.shape), c.size), nil
 }
 
 // <<<--- MERGE BLOCKS --->>>
@@ -186,9 +188,12 @@ func (m *mergeBlocks) execute(c *canvas) (int, error) {
 	if !compatibleRectsForMerge(&b1.shape, &b2.shape) {
 		return 0.0, fmt.Errorf("blocks to be merged are not compatible")
 	}
+	// TODO: Implement correct cost-calculation.
+	// Clarification from the organizers: "When two blocks are merged, the cost
+	// is calculated by picking the larger block for computation."
 	// TODO: Implement complex blocks.
 	return 0.0, fmt.Errorf("unimplemented")
-	// return moveCost(1.0, &b0, c), nil
+	// return moveCost(1, &b0, c), nil
 }
 
 // <<<--- Program-interpretation. --->>>
@@ -200,6 +205,30 @@ type Program struct {
 type ExecResult struct {
 	img   *image.NRGBA
 	Score int
+}
+
+func getSimilarityScore(img1, img2 *image.NRGBA) int {
+	if img1.Bounds().Min.X != 0 || img2.Bounds().Min.X != 0 || img1.Bounds().Min.Y != 0 || img2.Bounds().Min.Y != 0 {
+		panic(fmt.Errorf("painting and canvas images not rooted at origin"))
+	}
+	if !img1.Bounds().Eq(img2.Bounds()) {
+		panic(fmt.Errorf("painting and canvas images not of same size"))
+	}
+
+	diff := 0.0
+	const alpha = 0.005
+	for y := 0; y < img1.Bounds().Max.Y; y++ {
+		for x := 0; x < img1.Bounds().Max.X; x++ {
+			clr1, clr2 := img1.NRGBAAt(x, y), img2.NRGBAAt(x, y)
+			rDist := int(clr1.R) - int(clr2.R)
+			gDist := int(clr1.G) - int(clr2.G)
+			bDist := int(clr1.B) - int(clr2.B)
+			aDist := int(clr1.A) - int(clr2.A)
+			sumSqrDist := rDist*rDist + gDist*gDist + bDist*bDist + aDist*aDist
+			diff += math.Sqrt(float64(sumSqrDist))
+		}
+	}
+	return int(math.RoundToEven(diff * alpha))
 }
 
 func InterpretProgram(prob *Problem, prog *Program) (*ExecResult, error) {
@@ -219,7 +248,8 @@ func InterpretProgram(prob *Problem, prog *Program) (*ExecResult, error) {
 		// TODO: Handle complex blocks as well.
 		draw.Draw(res.img, block.shape, srcImg, image.Point{}, draw.Src)
 	}
-	// TODO: Compute similarity and add it to the score here.
-	res.Score = totalCost
+	// TODO: Figure out difference in scores with the reference implementation.
+	// E.g. 68,207 (theirs) vs 74,629 (ours) for #1 with our first solution.
+	res.Score = totalCost + getSimilarityScore(prob.tgtPainting, res.img)
 	return &res, nil
 }
