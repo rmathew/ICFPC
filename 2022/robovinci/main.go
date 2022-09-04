@@ -40,7 +40,6 @@ func readProblem() (*painter.Problem, error) {
 		return nil, fmt.Errorf("missing target painting")
 	}
 	tP := strings.TrimSpace(flag.Arg(0))
-	log.Printf("Reading target painting %q...", tP)
 	return painter.ReadProblem(tP)
 }
 

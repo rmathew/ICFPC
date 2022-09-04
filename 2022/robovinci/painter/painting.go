@@ -5,14 +5,20 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"log"
 	"os"
 )
+
+// IMPORTANT: *All* the internal data-structures use screen-coordinates with its
+// origin at the left-top. Since the visualizations are with the usual origin at
+// the left-bottom, use `flipImgVertically()` to translate input/output between
+// these coordinate_systems.
 
 // TODO: Support complex blocks and thus merge moves.
 type block struct {
 	shape image.Rectangle
-	// NOTE: The specification is unclear on whether the pixel-values are
-	// alpha pre-multiplied (RGBA) or not (NRGBA). Assume the latter for now.
+	// NOTE: The organizers have clarified that they do not use alpha pre-
+	// multiplied RGBA values (RGBA in Go).
 	pixelColor color.NRGBA
 }
 
@@ -41,23 +47,22 @@ func newCanvas(p *Problem) *canvas {
 	return &c
 }
 
-// Since the normal coordinates are with the origin at the left-bottom and the
-// screen coordinates are with the origin at the left top, this function
-// translates an image back and forth between the two systems.
 func flipImgVertically(img *image.NRGBA) {
-	bounds := img.Bounds()
-	for x := bounds.Min.X; x < bounds.Max.X; x++ {
-		maxY := (bounds.Min.Y + bounds.Max.Y) / 2
-		for y := bounds.Min.Y; y < maxY; y++ {
-			oldClr := img.At(x, y)
-			newY := bounds.Min.Y + bounds.Max.Y - y
-			img.Set(x, y, img.At(x, newY))
-			img.Set(x, newY, oldClr)
+	iDim := img.Bounds()
+	iMinX, iMinY, iMaxX, iMaxY := iDim.Min.X, iDim.Min.Y, iDim.Max.X, iDim.Max.Y
+	midY := (iMinY + iMaxY) / 2
+	for x := iMinX; x < iMaxX; x++ {
+		for y := iMinY; y < midY; y++ {
+			oldClr := img.NRGBAAt(x, y)
+			newY := iMinY + iMaxY - y - 1
+			img.SetNRGBA(x, y, img.NRGBAAt(x, newY))
+			img.SetNRGBA(x, newY, oldClr)
 		}
 	}
 }
 
 func ReadProblem(pFile string) (*Problem, error) {
+	log.Printf("Reading target painting %q...", pFile)
 	pF, err := os.Open(pFile)
 	if err != nil {
 		return nil, err
@@ -68,8 +73,10 @@ func ReadProblem(pFile string) (*Problem, error) {
 	if err != nil {
 		return nil, err
 	}
-	iCpy := image.NewNRGBA(img.Bounds().Sub(img.Bounds().Min))
-	draw.Draw(iCpy, iCpy.Bounds(), img, img.Bounds().Min, draw.Src)
+	iDim := img.Bounds()
+	log.Printf("Size of target painting: %dx%d.\n", iDim.Dx(), iDim.Dy())
+	iCpy := image.NewNRGBA(iDim.Sub(iDim.Min))
+	draw.Draw(iCpy, iCpy.Bounds(), img, iDim.Min, draw.Src)
 	flipImgVertically(iCpy)
 
 	var prob Problem
