@@ -30,9 +30,6 @@ func validateArgs() {
 	if len(*inProg) > 0 && len(*outProg) > 0 {
 		log.Fatalf("--inprog and --outprog are mutually exclusive.")
 	}
-	if len(*outProg) == 0 && len(*outImg) == 0 {
-		log.Fatalf("Nothing to do - neither --outprog nor --outimg specified.")
-	}
 }
 
 func readProblem() (*painter.Problem, error) {
@@ -50,20 +47,26 @@ func getProgram(prob *painter.Problem) (*painter.Program, error) {
 	return painter.SolveProblem(prob)
 }
 
-func putProgram(prob *painter.Problem, prog *painter.Program) error {
-	if len(*outProg) > 0 {
-		// TODO: Save the program.
-		// err := writeProgram()
+func execProgram(prob *painter.Problem, prog *painter.Program) (*painter.ExecResult, error) {
+	log.Printf("Executing program...")
+	res, err := painter.InterpretProgram(prob, prog)
+	if err == nil {
+		log.Printf("Program completed successfully with score %d.", res.Score)
 	}
-	if len(*outImg) > 0 {
-		log.Printf("Interpreting program")
-		res, err := painter.InterpretProgram(prob, prog)
+	return res, err
+}
+
+func maybeSaveOutput(prog *painter.Program, res *painter.ExecResult) error {
+	if len(*outProg) > 0 {
+		log.Printf("Saving the generated program to %q", *outProg)
+		err := painter.SaveProgram(prog, res, *outProg)
 		if err != nil {
 			return err
 		}
-		log.Printf("Program completed successfully with score %d.", res.Score)
-		log.Printf("Saving the result to %q", *outImg)
-		err = painter.RenderResult(res, *outImg)
+	}
+	if len(*outImg) > 0 {
+		log.Printf("Saving the rendered result to %q", *outImg)
+		err := painter.RenderResult(res, *outImg)
 		if err != nil {
 			return err
 		}
@@ -85,8 +88,13 @@ func main() {
 		log.Fatalf("Unable to get the program: %v", err)
 	}
 
-	err = putProgram(prob, prog)
+	res, err := execProgram(prob, prog)
 	if err != nil {
-		log.Fatalf("Unable to put the program: %v", err)
+		log.Fatalf("Unable to execute the program: %v", err)
+	}
+
+	err = maybeSaveOutput(prog, res)
+	if err != nil {
+		log.Fatalf("Unable to save the output: %v", err)
 	}
 }

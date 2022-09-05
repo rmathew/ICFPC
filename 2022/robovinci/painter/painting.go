@@ -1,6 +1,7 @@
 package painter
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -13,6 +14,8 @@ import (
 // origin at the left-top. Since the visualizations are with the usual origin at
 // the left-bottom, use `flipImgVertically()` to translate input/output between
 // these coordinate_systems.
+
+var initCanvasClr = color.NRGBA{255, 255, 255, 255}
 
 // TODO: Support complex blocks and thus merge moves.
 type block struct {
@@ -43,7 +46,7 @@ func newCanvas(p *Problem) *canvas {
 	c.size = rectSize(&c.bounds)
 	c.block_id = 0
 	c.blocks = make(map[string]block)
-	c.blocks["0"] = block{p.tgtPainting.Bounds(), color.NRGBA{255, 255, 255, 255}}
+	c.blocks["0"] = block{p.tgtPainting.Bounds(), initCanvasClr}
 	return &c
 }
 
@@ -74,7 +77,7 @@ func ReadProblem(pFile string) (*Problem, error) {
 		return nil, err
 	}
 	iDim := img.Bounds()
-	log.Printf("Size of target painting: %dx%d.\n", iDim.Dx(), iDim.Dy())
+	log.Printf("Size of the target painting: %dx%d", iDim.Dx(), iDim.Dy())
 	iCpy := image.NewNRGBA(iDim.Sub(iDim.Min))
 	draw.Draw(iCpy, iCpy.Bounds(), img, iDim.Min, draw.Src)
 	flipImgVertically(iCpy)
@@ -82,6 +85,19 @@ func ReadProblem(pFile string) (*Problem, error) {
 	var prob Problem
 	prob.tgtPainting = iCpy
 	return &prob, nil
+}
+
+func SaveProgram(prog *Program, res *ExecResult, pFile string) error {
+	f, err := os.Create(pFile)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "# Expected Score: %d\n", res.Score)
+	for _, i := range prog.insns {
+		fmt.Fprintf(f, "%s\n", i)
+	}
+	return nil
 }
 
 func RenderResult(res *ExecResult, iFile string) error {

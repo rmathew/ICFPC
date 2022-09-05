@@ -13,9 +13,10 @@ type solver interface {
 }
 
 func SolveProblem(prob *Problem) (*Program, error) {
-	b := bruteForceSolver{}
-	log.Printf("Using the solver %q for the problem", b)
-	return b.solve(prob)
+	// s := &bruteForceSolver{}
+	s := &pointCutsSolver{}
+	log.Printf("Using the solver %q for the problem.", s)
+	return s.solve(prob)
 }
 
 type tgtBlock struct {

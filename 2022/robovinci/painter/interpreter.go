@@ -10,14 +10,39 @@ import (
 
 // <<<--- Moves on the canvas. --->>>
 
+type moveType int
+
+const (
+	lineCutMove moveType = iota
+	pointCutMove
+	colorMove
+	swapMove
+	mergeMove
+)
+
 type move interface {
 	fmt.Stringer
 	execute(c *canvas) (int, error)
 }
 
-func moveCost(baseCost, blockSize, canvasSize int) int {
-	cost := float64(baseCost) * (float64(canvasSize) / float64(blockSize))
-	return int(math.Round(cost))
+func moveCost(mvType moveType, blockSize, canvasSize int) (int, error) {
+	var baseCost float64
+	switch mvType {
+	case lineCutMove:
+		baseCost = 7.0
+	case pointCutMove:
+		baseCost = 10.0
+	case colorMove:
+		baseCost = 5.0
+	case swapMove:
+		baseCost = 3.0
+	case mergeMove:
+		baseCost = 1.0
+	default:
+		return 0, fmt.Errorf("unknown move-type")
+	}
+	cost := baseCost * (float64(canvasSize) / float64(blockSize))
+	return int(math.Round(cost)), nil
 }
 
 // <<<--- LINE CUT --->>>
@@ -65,7 +90,7 @@ func (m *lineCut) execute(c *canvas) (int, error) {
 	delete(c.blocks, m.blockId)
 	c.blocks[m.blockId+".0"] = b1
 	c.blocks[m.blockId+".1"] = b2
-	return moveCost(7, rectSize(&b0.shape), c.size), nil
+	return moveCost(lineCutMove, rectSize(&b0.shape), c.size)
 }
 
 // <<<--- POINT CUT --->>>
@@ -105,7 +130,7 @@ func (m *pointCut) execute(c *canvas) (int, error) {
 	c.blocks[m.blockId+".1"] = b2
 	c.blocks[m.blockId+".2"] = b3
 	c.blocks[m.blockId+".3"] = b4
-	return moveCost(10, rectSize(&b0.shape), c.size), nil
+	return moveCost(pointCutMove, rectSize(&b0.shape), c.size)
 }
 
 // <<<--- COLOR BLOCK --->>>
@@ -127,7 +152,7 @@ func (m *colorBlock) execute(c *canvas) (int, error) {
 	}
 	b0.pixelColor = m.pixelColor
 	c.blocks[m.blockId] = b0
-	return moveCost(5, rectSize(&b0.shape), c.size), nil
+	return moveCost(colorMove, rectSize(&b0.shape), c.size)
 }
 
 // <<<--- SWAP BLOCKS --->>>
@@ -156,7 +181,7 @@ func (m *swapBlocks) execute(c *canvas) (int, error) {
 	b1, b2 = b2, b1
 	c.blocks[m.blockId1] = b1
 	c.blocks[m.blockId2] = b2
-	return moveCost(3, rectSize(&b1.shape), c.size), nil
+	return moveCost(swapMove, rectSize(&b1.shape), c.size)
 }
 
 // <<<--- MERGE BLOCKS --->>>
@@ -192,7 +217,7 @@ func (m *mergeBlocks) execute(c *canvas) (int, error) {
 	// is calculated by picking the larger block for computation."
 	// TODO: Implement complex blocks.
 	return 0, fmt.Errorf("unimplemented")
-	// return moveCost(1, &b0, c), nil
+	// return moveCost(mergeMove, &b0, c)
 }
 
 // <<<--- Program-interpretation. --->>>
@@ -207,17 +232,15 @@ type ExecResult struct {
 }
 
 func getSimilarityScore(img1, img2 *image.NRGBA) int {
-	if !img1.Bounds().Eq(img2.Bounds()) {
+	iDim1, iDim2 := img1.Bounds(), img2.Bounds()
+	if !iDim1.Eq(iDim2) {
 		panic(fmt.Errorf("painting and canvas images of unequal bounds"))
-	}
-	if img1.Bounds().Min.X != 0 || img1.Bounds().Min.Y != 0 {
-		panic(fmt.Errorf("painting and canvas images not rooted at origin"))
 	}
 
 	diff := 0.0
 	const alpha = 0.005
-	for y := 0; y < img1.Bounds().Max.Y; y++ {
-		for x := 0; x < img1.Bounds().Max.X; x++ {
+	for y := iDim1.Min.Y; y < iDim1.Max.Y; y++ {
+		for x := iDim1.Min.X; x < iDim1.Max.X; x++ {
 			clr1, clr2 := img1.NRGBAAt(x, y), img2.NRGBAAt(x, y)
 			rDist := int(clr1.R) - int(clr2.R)
 			gDist := int(clr1.G) - int(clr2.G)
@@ -240,13 +263,21 @@ func InterpretProgram(prob *Problem, prog *Program) (*ExecResult, error) {
 		}
 		totalCost += insnCost
 	}
-	var res ExecResult
-	res.img = image.NewNRGBA(c.bounds)
+
+	img := image.NewNRGBA(c.bounds)
+	blk0, ok := c.blocks["0"]
+	if !ok || !blk0.shape.Eq(img.Bounds()) {
+		blankImg := image.NewUniform(initCanvasClr)
+		draw.Draw(img, img.Bounds(), blankImg, image.Point{}, draw.Src)
+	}
 	for _, block := range c.blocks {
 		srcImg := image.NewUniform(block.pixelColor)
 		// TODO: Handle complex blocks as well.
-		draw.Draw(res.img, block.shape, srcImg, image.Point{}, draw.Src)
+		draw.Draw(img, block.shape, srcImg, image.Point{}, draw.Src)
 	}
+
+	var res ExecResult
+	res.img = img
 	res.Score = totalCost + getSimilarityScore(prob.tgtPainting, res.img)
 	return &res, nil
 }
