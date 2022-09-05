@@ -10,6 +10,7 @@ import (
 )
 
 var inProg = flag.String("inprog", "", "file for reading in a program")
+var inCfg = flag.String("incfg", "", "file for reading in initial configuration")
 var outProg = flag.String("outprog", "", "file for writing out the program")
 var outImg = flag.String("outimg", "", "file for rendering the solution")
 
@@ -37,7 +38,7 @@ func readProblem() (*painter.Problem, error) {
 		return nil, fmt.Errorf("missing target painting")
 	}
 	tP := strings.TrimSpace(flag.Arg(0))
-	return painter.ReadProblem(tP)
+	return painter.ReadProblem(tP, strings.TrimSpace(*inCfg))
 }
 
 func getProgram(prob *painter.Problem) (*painter.Program, error) {

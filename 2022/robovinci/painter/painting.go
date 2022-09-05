@@ -1,13 +1,17 @@
 package painter
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/png"
+	"io/ioutil"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 )
 
 // IMPORTANT: *All* the internal data-structures use screen-coordinates with its
@@ -34,6 +38,7 @@ type canvas struct {
 
 type Problem struct {
 	tgtPainting *image.NRGBA
+	initBlocks  map[string]block
 }
 
 func rectSize(r *image.Rectangle) int {
@@ -46,7 +51,15 @@ func newCanvas(p *Problem) *canvas {
 	c.size = rectSize(&c.bounds)
 	c.block_id = 0
 	c.blocks = make(map[string]block)
-	c.blocks["0"] = block{p.tgtPainting.Bounds(), initCanvasClr}
+	for k, v := range p.initBlocks {
+		c.blocks[k] = v
+		blkIdParts := strings.Split(k, ".")
+		if bid, err := strconv.Atoi(blkIdParts[0]); err == nil {
+			if bid > c.block_id {
+				c.block_id = bid
+			}
+		}
+	}
 	return &c
 }
 
@@ -64,7 +77,63 @@ func flipImgVertically(img *image.NRGBA) {
 	}
 }
 
-func ReadProblem(pFile string) (*Problem, error) {
+func maybeReadInitCfg(prob *Problem, cFile string) error {
+	if len(cFile) == 0 {
+		return nil
+	}
+	log.Printf("Reading initial configuration %q...", cFile)
+	b, err := ioutil.ReadFile(cFile)
+	if err != nil {
+		return err
+	}
+	var f interface{}
+	err = json.Unmarshal(b, &f)
+	if err != nil {
+		return err
+	}
+	m := f.(map[string]interface{})
+	for k, v := range m {
+		switch k {
+		case "width": // Ignore
+		case "height": // Ignore
+		case "blocks":
+			ff := v.([]interface{})
+			for _, vv := range ff {
+				var blkId string
+				var blk block
+				fff := vv.(map[string]interface{})
+				for kkk, vvv := range fff {
+					switch kkk {
+					case "blockId":
+						blkId = vvv.(string)
+					case "bottomLeft":
+						bl := vvv.([]interface{})
+						blk.shape.Min.X = int(bl[0].(float64))
+						blk.shape.Min.Y = int(bl[1].(float64))
+					case "topRight":
+						tr := vvv.([]interface{})
+						blk.shape.Max.X = int(tr[0].(float64))
+						blk.shape.Max.Y = int(tr[1].(float64))
+					case "color":
+						fclr := vvv.([]interface{})
+						var clr color.NRGBA
+						clr.R = uint8(fclr[0].(float64))
+						clr.G = uint8(fclr[1].(float64))
+						clr.B = uint8(fclr[2].(float64))
+						clr.A = uint8(fclr[3].(float64))
+						blk.pixelColor = clr
+					}
+				}
+				// TODO: Check the sanity of the input first.
+				log.Printf("InitBlock: %s@[%s:%s]", blkId, blk.shape, clr2Str(blk.pixelColor))
+				prob.initBlocks[blkId] = blk
+			}
+		}
+	}
+	return nil
+}
+
+func ReadProblem(pFile, cFile string) (*Problem, error) {
 	log.Printf("Reading target painting %q...", pFile)
 	pF, err := os.Open(pFile)
 	if err != nil {
@@ -84,6 +153,13 @@ func ReadProblem(pFile string) (*Problem, error) {
 
 	var prob Problem
 	prob.tgtPainting = iCpy
+	prob.initBlocks = make(map[string]block)
+	if err := maybeReadInitCfg(&prob, cFile); err != nil {
+		return nil, err
+	}
+	if len(prob.initBlocks) == 0 {
+		prob.initBlocks["0"] = block{iCpy.Bounds(), initCanvasClr}
+	}
 	return &prob, nil
 }
 

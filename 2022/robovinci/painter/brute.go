@@ -137,9 +137,14 @@ func (p *pointCutsSolver) solveBlock(bd *pcsBlockData) {
 }
 
 func (p *pointCutsSolver) solve(prob *Problem) (*Program, error) {
+	tpb := prob.tgtPainting.Bounds()
+	b0, ok := prob.initBlocks["0"]
+	if !ok || !b0.shape.Eq(tpb) {
+		log.Fatalf("%q cannot handle non-default initial-configurations.", p)
+	}
+
 	start := time.Now()
 
-	tpb := prob.tgtPainting.Bounds()
 	p.cSize = rectSize(&tpb)
 	p.insns = make([]move, 0, 1024)
 
