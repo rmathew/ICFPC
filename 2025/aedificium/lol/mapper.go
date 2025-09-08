@@ -46,6 +46,11 @@ type library struct {
 	rooms []room
 }
 
+type phantomRoom struct {
+	partRoom room
+	supRecs  []int
+}
+
 type Mapper struct {
 	client *Client
 }
@@ -132,6 +137,9 @@ func getRoomRecords(plan []int, pathRec []int) ([]roomRecord, error) {
 		rr.exitDoor = doorNum
 		rr.exitLabel = pathRec[step+1]
 	}
+	if len(roomRecs) == 0 {
+		return nil, fmt.Errorf("empty set of room-records")
+	}
 	return roomRecs, nil
 }
 
@@ -147,18 +155,102 @@ func isRoomLabelLetter(b byte) bool {
 	return b >= 'A' && b <= 'D'
 }
 
-func roomRecordsToStr(rrs []roomRecord, sep string) string {
+func tracePath(rrs []roomRecord) string {
 	var b strings.Builder
-	b.Grow(4*len(rrs) + 1)
+	b.Grow(2*len(rrs) + 1)
 	b.WriteRune(roomLabelToLetter(rrs[0].label))
 	for _, rr := range rrs {
 		b.WriteRune(rune('0' + rr.exitDoor))
-		b.WriteString(sep)
 		b.WriteRune(roomLabelToLetter(rr.exitLabel))
 	}
 	return b.String()
 }
 
+func newPhantomRooms(roomRecs []roomRecord, size int) map[int]*phantomRoom {
+	pRooms := make(map[int]*phantomRoom, len(roomRecs))
+	nPlaceholders := 0
+	for i := range roomRecs {
+		idx := size + nPlaceholders
+		rr := &roomRecs[i]
+		rr.idx = idx
+		pr := &phantomRoom{supRecs: []int{i}}
+		initRoom(&pr.partRoom, rr.label)
+		pr.partRoom.doors[rr.exitDoor].toRoomLabel = rr.exitLabel
+		pRooms[idx] = pr
+		nPlaceholders++
+	}
+	log.Printf("INFO: %d phantom rooms created.", len(pRooms))
+	return pRooms
+}
+
+func mergeDoors(src, tgt *edge) error {
+	srl := src.toRoomLabel
+	trl := tgt.toRoomLabel
+	if srl != trl {
+		if trl == invRoomLabel {
+			tgt.toRoomLabel = srl
+		} else if srl != invRoomLabel {
+			return fmt.Errorf("door-label mis-match (%d vs %d)", srl, trl)
+		}
+	}
+
+	sri := src.toRoomIdx
+	tri := tgt.toRoomIdx
+	if sri != tri {
+		if tri == invRoomIdx {
+			tgt.toRoomIdx = sri
+		} else if sri != invRoomIdx {
+			return fmt.Errorf("door-index mis-match (%d vs %d)", sri, tri)
+		}
+	}
+
+	srd := src.toRoomDoor
+	trd := tgt.toRoomDoor
+	if srd != trd {
+		if trd == invDoorNum {
+			tgt.toRoomDoor = srd
+		} else if srd != invDoorNum {
+			return fmt.Errorf("door-target mis-match (%d vs %d)", srd, trd)
+		}
+	}
+	return nil
+}
+
+func mergePhantomRooms(pRooms map[int]*phantomRoom, idxs []int,
+	rrs []roomRecord) error {
+	if len(idxs) < 2 {
+		return nil
+	}
+	mainIdx := idxs[0]
+	mainPr := pRooms[mainIdx]
+	mr := &mainPr.partRoom
+	for i := 1; i < len(idxs); i++ {
+		subIdx := idxs[i]
+		subPr := pRooms[subIdx]
+		sr := &subPr.partRoom
+		if sr.label != mr.label {
+			return fmt.Errorf("label mis-match (%d vs %d)", sr.label, mr.label)
+		}
+		for j := 0; j < numDoorsPerRoom; j++ {
+			if err := mergeDoors(&sr.doors[j], &mr.doors[j]); err != nil {
+				return err
+			}
+		}
+		for _, j := range subPr.supRecs {
+			if rrs[j].idx != subIdx {
+				return fmt.Errorf("index mis-match (%d vs %d)", rrs[j].idx,
+					subIdx)
+			}
+			rrs[j].idx = mainIdx
+		}
+		mainPr.supRecs = append(mainPr.supRecs, subPr.supRecs...)
+
+		delete(pRooms, subIdx)
+	}
+	return nil
+}
+
+/* BEGIN: DEPRECATED
 func getCandidateRoomIdxForRec(lib *library, rr *roomRecord) (int, error) {
 	for i := range lib.rooms {
 		rm := &lib.rooms[i]
@@ -188,7 +280,7 @@ func setPlaceholderRoomIdxs(roomRecs []roomRecord, size int) int {
 	return nPlaceholders
 }
 
-func addRoomsFromRoomRecs(lib *library, roomRecs []roomRecord) error {
+func useLabelAndDoorInRoomRecs(lib *library, roomRecs []roomRecord) error {
 	nRooms := 0
 	for i := range roomRecs {
 		rr := &roomRecs[i]
@@ -214,90 +306,79 @@ func addRoomsFromRoomRecs(lib *library, roomRecs []roomRecord) error {
 
 	return nil
 }
+END: DEPRECATED */
 
-func findAllDupeSubPaths(s string, minSubPathLen int) map[string][]int {
+func findAllDupeSubPaths(pt string, minSubPathLen int) map[string][]int {
 	minSubStrLen := minSubPathLen*2 + 1
-	if len(s) < minSubStrLen {
+	if len(pt) < minSubStrLen {
 		return nil
 	}
 	allSubs := make(map[string][]int)
-	for i := 0; i <= len(s)-minSubStrLen; i++ {
-		for j := minSubStrLen; i+j <= len(s); j++ {
-			if !isRoomLabelLetter(s[i]) {
+	for i := 0; i <= len(pt)-minSubStrLen; i++ {
+		for j := minSubStrLen; i+j <= len(pt); j += 2 {
+			ss := pt[i : i+j]
+			if !isRoomLabelLetter(ss[0]) || !isRoomLabelLetter(ss[len(ss)-1]) {
 				continue
 			}
-			sub := s[i : i+j]
-			allSubs[sub] = append(allSubs[sub], i)
+			allSubs[ss] = append(allSubs[ss], i)
 		}
 	}
+	// Note that we will find sub-paths that are themselves sub-paths of others:
+	//     DupeSubPath 'B3C5A3A' at '[90 104 160]'
+	//     DupeSubPath 'B3C5A3A2C' at '[90 160]'
+	//     DupeSubPath 'C5A3A2C' at '[92 162]'
+	// We will also find overlapping duplicates for a given sub-path. E.g.
+	//     DupeSubPath 'B4B4B4B' at '[82 84]'
+	// AFAICT, these cases *should* be fine for correctness, albeit a bit
+	// wasteful to process.
 	dupes := make(map[string][]int)
-	for sub, idxs := range allSubs {
+	for ss, idxs := range allSubs {
 		if len(idxs) > 1 {
-			dupes[sub] = idxs
+			dupes[ss] = idxs
 		}
 	}
 	return dupes
 }
 
-func useSubPathsInRoomRecs(lib *library, rrs []roomRecord, pt string) error {
+func useSubPathsInRoomRecs(pRooms map[int]*phantomRoom, rrs []roomRecord,
+	pt string, size int) error {
 	const minSubPathLen = 3
 	log.Printf("INFO: Finding duplicate %d+ long sub-paths in the path-trace.",
 		minSubPathLen)
 	dupeSubPaths := findAllDupeSubPaths(pt, minSubPathLen)
 
-	basePIdx := len(lib.rooms)
 	for k, v := range dupeSubPaths {
 		log.Printf("INFO: DupeSubPath '%s' at '%s'.", k, fmt.Sprint(v))
 
 		// `k` is of the form "C2C1D4A" and `v` is like "[78, 158]".
 		for i := 0; i < len(k)-1; i += 2 {
 			rrIdxs := make([]int, 0, len(v))
-			candiIdx := invRoomIdx
 			for _, j := range v {
 				rri := (i + j) / 2
-				rrIdxs = append(rrIdxs, rri)
 				rr := rrs[rri]
 				if rune(k[i]) != roomLabelToLetter(rr.label) {
 					return fmt.Errorf(
 						"sub-path label-mismatch: %c != %c at roomRecs[%d]",
 						rune(k[i]), roomLabelToLetter(rr.label), rri)
 				}
-				if candiIdx == invRoomIdx {
-					candiIdx = rr.idx
-				} else if rr.idx < basePIdx {
-					if candiIdx < basePIdx && candiIdx != rr.idx {
-						return fmt.Errorf(
-							"room-indexes %d vs %d for room-record at %d",
-							candiIdx, rr.idx, rri)
-					}
-					candiIdx = rr.idx
-				}
+				rrIdxs = append(rrIdxs, rri)
 			}
+
+			priSet := make(map[int]bool, len(rrIdxs))
 			for _, rri := range rrIdxs {
-				rrs[rri].idx = candiIdx
+				priSet[rrs[rri].idx] = true
 			}
-			/* BEGIN: DEBUG
-			candiType := "placeholder"
-			if candiIdx == invRoomIdx {
-				candiType = "invalid"
-			} else if candiIdx < basePIdx {
-				candiType = "real"
+			priList := make([]int, 0, len(priSet))
+			for pri := range priSet {
+				priList = append(priList, pri)
 			}
-			log.Printf("INFO: For %c, merged %d room-records to %s index %d",
-				rune(k[i]), len(rrIdxs), candiType, candiIdx)
-			END: DEBUG */
+			if err := mergePhantomRooms(pRooms, priList, rrs); err != nil {
+				return err
+			}
 		}
 	}
-
-	ps := make(map[int]bool, len(rrs)/3)
-	for i := range rrs {
-		idx := rrs[i].idx
-		if idx >= basePIdx {
-			ps[idx] = true
-		}
-	}
-	log.Printf("INFO: %d placeholders remain after the second pass.", len(ps))
-
+	log.Printf("INFO: %d phantom rooms remain after using dupe sub-paths.",
+		len(pRooms))
 	return nil
 }
 
@@ -316,20 +397,29 @@ func getRoomDoorTgts(rm *room) string {
 	return b.String()
 }
 
-func getMapFromRoomRecords(roomRecs []roomRecord, size int) (*library, error) {
-	const interRoomSep = "->"
-	rrStr := roomRecordsToStr(roomRecs, interRoomSep)
-	log.Printf("INFO: Results of exploration:\n%s", rrStr)
-	pathTrace := strings.ReplaceAll(rrStr, interRoomSep, "")
+func getMapFromPlanResult(plan []int, res []int, size int) (*library, error) {
+	var err error
+	var roomRecs []roomRecord
+	if roomRecs, err = getRoomRecords(plan, res); err != nil {
+		return nil, err
+	}
+
+	pathTrace := tracePath(roomRecs)
+	log.Printf("INFO: Results of exploration:\n%s", pathTrace)
+
+	/* BEGIN: DEPRECATED
+	if err = useLabelAndDoorInRoomRecs(lib, roomRecs); err != nil {
+		return nil, err
+	}
+	END: DEPRECATED */
+
+	pRooms := newPhantomRooms(roomRecs, size)
+	err = useSubPathsInRoomRecs(pRooms, roomRecs, pathTrace, size)
+	if err != nil {
+		return nil, err
+	}
 
 	lib := newLibrary(size)
-
-	if err := addRoomsFromRoomRecs(lib, roomRecs); err != nil {
-		return nil, err
-	}
-	if err := useSubPathsInRoomRecs(lib, roomRecs, pathTrace); err != nil {
-		return nil, err
-	}
 
 	currentRoomIdx := 0
 	for _, rr := range roomRecs {
@@ -484,16 +574,9 @@ func (m *Mapper) Map(prob string) error {
 	if len(res) != 1 {
 		return fmt.Errorf("expected 1 result; got #d", len(res))
 	}
-	var roomRecs []roomRecord
-	if roomRecs, err = getRoomRecords(plan, res[0]); err != nil {
-		return err
-	}
-	if len(roomRecs) == 0 {
-		return fmt.Errorf("empty set of room-records")
-	}
 
 	var lib *library
-	lib, err = getMapFromRoomRecords(roomRecs, probInfo.size)
+	lib, err = getMapFromPlanResult(plan, res[0], probInfo.size)
 	if err != nil {
 		return err
 	}
