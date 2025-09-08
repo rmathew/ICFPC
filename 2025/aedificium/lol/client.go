@@ -23,6 +23,8 @@ func sendJSON(path string, in interface{}, out interface{}) error {
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusBadRequest {
 			log.Printf("ERROR: Request JSON\n%s\n", string(b))
+			// XXX: Checking for `err` with ReadAll() causes us to miss the
+			// error-message in the response-body.
 			respBody, _ := ioutil.ReadAll(resp.Body)
 			log.Printf("ERROR: Response Body\n%s\n", string(respBody))
 		}
@@ -72,10 +74,13 @@ func (c *Client) SelectProblem(prob string) error {
 		Error       string `json:"error,omitempty"`
 	}{}
 	if err := sendJSON("/select", reqBody, &resBody); err != nil {
-		return maybeAnnotateError(err, resBody.Error)
+		return err
+	}
+	if resBody.Error != "" {
+		return fmt.Errorf("server-error '%s'", resBody.Error)
 	}
 	selProb := resBody.ProblemName
-	log.Printf("INFO: Selected Problem: '%s'", selProb)
+	log.Printf("INFO: Selected the problem '%s' on the server.", selProb)
 	return nil
 }
 
@@ -90,7 +95,10 @@ func (c *Client) Explore(plans []string) ([][]int, error) {
 		Error      string  `json:"error,omitempty"`
 	}{}
 	if err := sendJSON("/explore", reqBody, &resBody); err != nil {
-		return nil, maybeAnnotateError(err, resBody.Error)
+		return nil, err
+	}
+	if resBody.Error != "" {
+		return nil, fmt.Errorf("server-error '%s'", resBody.Error)
 	}
 	log.Printf("INFO: Post-exploration query-count: %d", resBody.QueryCount)
 	return resBody.Results, nil
@@ -106,7 +114,10 @@ func (c *Client) Guess(guessedMap *GuessedMap) (bool, error) {
 		Error   string `json:"error,omitempty"`
 	}{}
 	if err := sendJSON("/guess", reqBody, &resBody); err != nil {
-		return false, maybeAnnotateError(err, resBody.Error)
+		return false, err
+	}
+	if resBody.Error != "" {
+		return false, fmt.Errorf("server-error '%s'", resBody.Error)
 	}
 	log.Printf("INFO: Guessed map was correct: %v", resBody.Correct)
 	return resBody.Correct, nil
